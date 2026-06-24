@@ -1,4 +1,8 @@
 import { useState, useRef } from "react";
+import {
+  fitMultiplier, maxPillar, reband, sortByComposite,
+  type Severity, type Pillars, type PillarKey, type LeadStatus,
+} from "../lib/triptique";
 
 type Lead = {
   name: string;
@@ -13,8 +17,12 @@ type Lead = {
 type ScoredLead = Lead & {
   website: string;
   domain: string;
-  score: number;
-  verdict: "Hot" | "Warm" | "Cold";
+  status: LeadStatus;      // scored / unreadable / no-website / pending / error
+  pillars: Pillars;
+  severity: { found: Severity; secure: Severity; compliant: Severity };
+  exposure: number;        // 0–100 composite of the three pillars (from server)
+  composite: number;       // exposure × fit, computed client-side for ranking
+  verdict: "Hot" | "Warm" | "Cold"; // assigned by the relative banding pass
   cms: string;
   cveRisk: boolean;
   signals: string[];
@@ -32,7 +40,25 @@ const VERDICT_COLORS = {
   Cold: { bg: "#0c141b", border: "#1c2c39", text: "#8fa3b5", badge: "#1c2c39" },
 };
 
+const PILLAR_LABELS: Record<PillarKey, string> = {
+  found: "Found", secure: "Secure", compliant: "Compliant",
+};
+
 const mono: React.CSSProperties = { fontFamily: "JetBrains Mono, monospace" };
+
+function pillarColor(s: Severity): { bg: string; text: string } {
+  if (s === "critical") return { bg: "#2a0808", text: "#ff6b6b" };
+  if (s === "moderate") return { bg: "#3a2800", text: "#f0a500" };
+  return { bg: "#0d2010", text: "#6a8050" };
+}
+
+// What to show in the verdict column / CSV: unreadable + no-website firms are
+// not scored, so they must never be shown as a (misleading) "Cold".
+function displayVerdict(l: ScoredLead): string {
+  if (l.status === "unreadable") return "Unreadable";
+  if (l.status === "no-website") return "No site";
+  return l.verdict;
+}
 
 export default function LeadGen() {
   const [niche, setNiche] = useState("solicitors");
@@ -72,7 +98,10 @@ export default function LeadGen() {
         setError(data.error ?? "Failed to fetch leads");
       } else {
         const raw: ScoredLead[] = (data.leads ?? []).map((l: Lead) => ({
-          ...l, website: "", domain: "", score: 0, verdict: "Cold" as const,
+          ...l, website: "", domain: "", status: "pending" as const,
+          pillars: { found: 0, secure: 0, compliant: 0 },
+          severity: { found: "ok" as const, secure: "ok" as const, compliant: "ok" as const },
+          exposure: 0, composite: 0, verdict: "Cold" as const,
           cms: "Unknown", cveRisk: false, signals: [], emailHook: "",
           fetchNote: "", scoring: "pending" as const,
         }));
@@ -114,22 +143,28 @@ export default function LeadGen() {
 
         const data = await resp.json();
         if (resp.ok) {
-          updated[i] = { ...updated[i], ...data, scoring: "done" };
+          const exposure = data.exposure ?? 0;
+          const composite = exposure * fitMultiplier(updated[i].reviewCount ?? 0);
+          const status: LeadStatus = data.status ?? "scored";
+          updated[i] = { ...updated[i], ...data, status, exposure, composite, scoring: "done" };
         } else {
-          updated[i] = { ...updated[i], scoring: "error", scoreError: data.error };
+          updated[i] = { ...updated[i], scoring: "error", status: "error", scoreError: data.error };
         }
       } catch (e) {
         if (abort.signal.aborted) break;
-        updated[i] = { ...updated[i], scoring: "error", scoreError: "Scoring failed" };
+        updated[i] = { ...updated[i], scoring: "error", status: "error", scoreError: "Scoring failed" };
       }
 
       setScoredCount(i + 1);
-      setLeads([...updated].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)));
+      // Reband live so the batch stays relatively classified as it streams in.
+      setLeads(reband(sortByComposite(updated)));
 
       // Small delay to avoid rate limits
       if (i < updated.length - 1) await sleep(500);
     }
 
+    // Final authoritative banding pass over the complete batch.
+    setLeads(reband(sortByComposite(updated)));
     setScoring(false);
   }
 
@@ -148,13 +183,14 @@ export default function LeadGen() {
   }
 
   function exportCSV() {
-    const headers = ["Name", "Domain", "Score", "Verdict", "CMS", "CVE Risk", "Signals", "Email Hook", "Address", "Rating", "Reviews", "Wappalyzer", "Sucuri"];
+    const headers = ["Name", "Domain", "Verdict", "Exposure", "Found", "Secure", "Compliant", "CMS", "CVE Risk", "Signals", "Email Hook", "Address", "Rating", "Reviews", "Wappalyzer", "Sucuri"];
     const rows = leads
       .filter(l => l.scoring === "done")
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .sort((a, b) => (b.composite ?? 0) - (a.composite ?? 0))
       .map(l => [
-        l.name, l.domain, l.score, l.verdict, l.cms,
-        l.cveRisk ? "YES" : "no",
+        l.name, l.domain, displayVerdict(l), l.exposure,
+        l.pillars.found, l.pillars.secure, l.pillars.compliant,
+        l.cms, l.cveRisk ? "YES" : "no",
         l.signals.join("; "),
         l.emailHook,
         l.address, l.rating ?? "", l.reviewCount,
@@ -290,6 +326,7 @@ export default function LeadGen() {
             </div>
 
             {leads.map((lead, i) => {
+              const scored = lead.status === "scored";
               const vc = VERDICT_COLORS[lead.verdict] ?? VERDICT_COLORS.Cold;
               const isPending = lead.scoring === "pending";
               const isScoring = isPending && scoring && i === scoredCount;
@@ -310,10 +347,10 @@ export default function LeadGen() {
 
                     {/* Score */}
                     <div>
-                      {lead.scoring === "done" ? (
+                      {lead.scoring === "done" && scored ? (
                         <>
-                          <div style={{ fontSize: 26, fontWeight: 700, color: vc.text, lineHeight: 1 }}>{lead.score}</div>
-                          <div style={{ fontSize: 10, color: "#4a6070", ...mono }}>/10</div>
+                          <div style={{ fontSize: 26, fontWeight: 700, color: vc.text, lineHeight: 1 }}>{lead.exposure}</div>
+                          <div style={{ fontSize: 10, color: "#4a6070", ...mono }}>/100</div>
                         </>
                       ) : isScoring ? (
                         <div style={{ fontSize: 11, color: "#f0a500", ...mono }}>⟳</div>
@@ -369,11 +406,13 @@ export default function LeadGen() {
 
                     {/* Verdict */}
                     <div>
-                      {lead.scoring === "done" ? (
+                      {lead.scoring === "done" && scored ? (
                         <span style={{ fontWeight: 700, color: vc.text, fontSize: 13 }}>
                           {lead.verdict === "Hot" ? "🔥 " : lead.verdict === "Warm" ? "● " : "○ "}
                           {lead.verdict}
                         </span>
+                      ) : lead.scoring === "done" ? (
+                        <span style={{ ...mono, fontSize: 11, color: "#5a6b78" }}>{displayVerdict(lead)}</span>
                       ) : isScoring ? (
                         <span style={{ ...mono, fontSize: 11, color: "#f0a500" }}>Scanning…</span>
                       ) : (
@@ -383,6 +422,19 @@ export default function LeadGen() {
 
                     {/* Signals */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {lead.scoring === "done" && scored && (
+                        <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                          {(["found", "secure", "compliant"] as PillarKey[]).map(p => {
+                            const pc = pillarColor(lead.severity[p]);
+                            return (
+                              <span key={p} title={`${PILLAR_LABELS[p]} exposure: ${lead.pillars[p]}/100 (${lead.severity[p]})`}
+                                style={{ ...mono, fontSize: 9, padding: "2px 6px", borderRadius: 4, background: pc.bg, color: pc.text }}>
+                                {PILLAR_LABELS[p][0]}{lead.pillars[p]}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                       {lead.scoring === "done" && lead.signals.slice(0, 4).map(s => (
                         <span key={s} style={{ ...mono, fontSize: 10, color: "#8fa3b5", lineHeight: 1.4 }}>· {s}</span>
                       ))}
