@@ -109,11 +109,11 @@ export function detectTechSignals(
   let secure = 0;
   if (isWordPress && !hasSecPlugin) { secure += 30; signals.push("No security plugin"); }
   if (isWordPress && hasSecPlugin) { signals.push("Security plugin present"); }
-  if (isWeebly) { secure += 25; signals.push("Weebly — platform abandoned"); }
-  if (hasElementor) { secure += 15; signals.push("Elementor (46+ CVEs)"); cveRisk = true; }
-  if (hasSliderRev) { secure += 15; signals.push("Slider Revolution — exploit history"); cveRisk = true; }
-  if (hasWpBakery) { secure += 12; signals.push("WPBakery — CVE history"); cveRisk = true; }
-  if (hasJQueryMigrate) { secure += 10; signals.push("jQuery Migrate — legacy codebase"); }
+  if (isWeebly) { secure += 25; signals.push("Weebly — platform in maintenance mode"); }
+  if (hasElementor) { secure += 15; signals.push("Elementor — documented CVE history"); cveRisk = true; }
+  if (hasSliderRev) { secure += 15; signals.push("Slider Revolution — documented exploit history"); cveRisk = true; }
+  if (hasWpBakery) { secure += 12; signals.push("WPBakery — documented CVE history"); cveRisk = true; }
+  if (hasJQueryMigrate) { secure += 10; signals.push("jQuery Migrate — legacy codebase signal"); }
   if (!hasCloudflare && (isWordPress || isWeebly)) { secure += 15; signals.push("No CDN/WAF"); }
   if (hasCloudflare) { secure -= 20; signals.push("Cloudflare present"); }
   if (isManaged) { secure -= 40; } // hosted platforms patch the stack for you
@@ -156,18 +156,20 @@ export function detectTechSignals(
   // ── Email hook — pick the most cutting verified signal ──────────────────────
   // Never generate a hook from a page we couldn't read: every claim must be
   // verifiable, or the outreach email asserts something false.
+  // Hooks avoid hardcoded CVE counts and dates (they become stale). Instead they
+  // reference documented history or known exposure types, and link to verification.
   let emailHook = "";
   if (blank) {
     return { signals, pillars, severity, exposure, cms, cveRisk, emailHook, readable };
   }
   if (hasElementor) {
-    emailHook = `I can see the site is built on Elementor — it currently has over 46 publicly disclosed CVEs. Is anyone keeping an eye on that?`;
+    emailHook = `I can see the site is built on Elementor — it has a documented CVE history. Worth checking what version and patching status you're on?`;
   } else if (hasSliderRev) {
     emailHook = `The site is running Slider Revolution, which has a history of critical exploits. No security layer is visible either — worth a quick look?`;
   } else if (hasWpBakery) {
-    emailHook = `The site uses WPBakery Page Builder, which has a CVE history worth being aware of. No security plugin visible either.`;
+    emailHook = `The site uses WPBakery Page Builder, which has a known CVE history. No security plugin visible either — worth auditing?`;
   } else if (isWeebly) {
-    emailHook = `The site is built on Weebly — Square shut down the mobile app in December 2025 and the platform is effectively abandoned. Happy to show what that means for you?`;
+    emailHook = `The site is built on Weebly — the platform has entered maintenance-only mode and is no longer actively developed. Worth confirming what that means for your roadmap?`;
   } else if (isWordPress && !hasSecPlugin) {
     emailHook = `The site is on WordPress with no security plugin visible — that's one of the most common vectors for SME site compromises. Worth 5 minutes to check?`;
   } else if (hasAnalytics && !hasCMP) {
@@ -175,7 +177,7 @@ export function detectTechSignals(
   } else if (!hasPolicyLink) {
     emailHook = `I couldn't find a privacy or cookie policy linked on the site — that's usually the first thing a GDPR check flags. Worth a quick look?`;
   } else if (hasJQueryMigrate) {
-    emailHook = `jQuery Migrate is active on the site — it's a reliable signal the codebase hasn't been updated in 3+ years. Happy to share what else that usually means?`;
+    emailHook = `jQuery Migrate is active on the site — it's a reliable signal the codebase hasn't been updated in years. Happy to share what else that usually means?`;
   } else if (!hasSchema) {
     emailHook = `I searched for your business type on ChatGPT this morning — the site doesn't appear. The missing piece is usually schema markup. Worth a quick look?`;
   }
