@@ -3,6 +3,7 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import leadsRouter from "./routes/leads.js";
+import healthRouter from "./routes/health.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -11,7 +12,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// API routes
+// API routes. Health is mounted FIRST and must stay ahead of express.static and
+// the app.get("*") SPA fallback below, or the fallback serves index.html and
+// /api/healthz silently returns the React page instead of JSON.
+app.use("/api", healthRouter);
 app.use("/api", leadsRouter);
 
 // Serve built React frontend
