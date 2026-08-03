@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { safeFetch } from "../lib/safe-url.js";
 
 const router: IRouter = Router();
 
@@ -186,14 +187,30 @@ export function detectTechSignals(
 }
 
 // ── Helpers: page + policy fetching ──────────────────────────────────────────
+// Direct server-side fetch, SSRF-guarded (same guard as stack-scanner/found-score/
+// proxaim-web). allorigins was a CORS-bypass proxy; this route runs in Node, not
+// a browser, so CORS never applied here, it was an unneeded third-party hop that
+// went down (520/522) and took every scan with it. Kept as a fallback only, for
+// the rare site that blocks a direct server fetch but not a rotating-IP proxy.
 const PROXY = "https://api.allorigins.win/get?url=";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 async function fetchPage(target: string, timeoutMs = 10000): Promise<string> {
-  const resp = await fetch(PROXY + encodeURIComponent(target), {
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const data = (await resp.json()) as { contents?: string };
-  return data.contents ?? "";
+  try {
+    const res = await safeFetch(target, { headers: { "User-Agent": UA }, timeoutMs });
+    if (res.ok) return await res.text();
+  } catch {
+    // fall through to the proxy
+  }
+  try {
+    const resp = await fetch(PROXY + encodeURIComponent(target), {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const data = (await resp.json()) as { contents?: string };
+    return data.contents ?? "";
+  } catch {
+    return "";
+  }
 }
 
 // Confirm a privacy/cookie policy actually exists before the Compliant pillar
