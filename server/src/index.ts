@@ -12,6 +12,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Allow downloads in iframe sandbox
+app.use((req, res, next) => {
+  res.setHeader("Permissions-Policy", "downloads=*");
+  next();
+});
+
 // API routes. Health is mounted FIRST and must stay ahead of express.static and
 // the app.get("*") SPA fallback below, or the fallback serves index.html and
 // /api/healthz silently returns the React page instead of JSON.
