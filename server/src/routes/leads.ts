@@ -99,9 +99,9 @@ export function detectTechSignals(
   // is JS-injected and absent from proxied HTML; the loader <script> is present).
   const hasCMP = /cookiebot|iubenda|onetrust|cookieyes|usercentrics|complianz|axeptio|termly|cookie-law-info|borlabs|didomi|quantcast|osano/i.test(h);
   const hasPolicyLink = hints.policyPresent ??
-    /privacy[-_ ]?policy|cookie[-_ ]?policy|\/privacy|informativa|cookie-law/i.test(h);
-  // Italian legal-disclosure signal (VAT id is mandatory on IT business sites).
-  const hasVatId = /partita\s?iva|p\.?\s?iva|vat\s?(no|number|id)/i.test(h);
+    /privacy[-_ ]?policy|cookie[-_ ]?policy|\/privacy|informativa|cookie-law|pol[ií]tica[-_ ]?de[-_ ]?privacidad|aviso[-_ ]?legal/i.test(h);
+  // Legal-disclosure signal: VAT id is mandatory on IT (P.IVA) and ES (CIF/NIF) business sites.
+  const hasVatId = /partita\s?iva|p\.?\s?iva|vat\s?(no|number|id)|\bcif\b|\bnif\b/i.test(h);
 
   const blank = h.trim().length === 0; // fetch failed / behind WAF → can't judge
   const readable = !blank;
@@ -133,7 +133,7 @@ export function detectTechSignals(
   if (hasAnalytics && !hasCMP) { compliant += 50; signals.push("Tracking with no consent banner — GDPR exposure"); }
   if (!hasPolicyLink) { compliant += 30; signals.push("No privacy/cookie policy link"); }
   if (!hasCMP) { compliant += 20; signals.push("No consent management detected"); }
-  if (!hasVatId) { compliant += 10; signals.push("No VAT/P.IVA disclosure"); }
+  if (!hasVatId) { compliant += 10; signals.push("No VAT/P.IVA/CIF disclosure"); }
   compliant = clamp100(compliant);
 
   // If we couldn't fetch the page, absence-based signals are meaningless noise.
@@ -217,7 +217,7 @@ async function fetchPage(target: string, timeoutMs = 10000): Promise<string> {
 // claims it's missing. Policies live on subpages, not the homepage, so probe the
 // common paths (EN + IT) and only trust a page that reads like a real policy.
 async function policyExists(website: string, homepageHtml: string): Promise<boolean> {
-  if (/privacy[-_ ]?policy|cookie[-_ ]?policy|\/privacy|informativa|cookie-law/i.test(homepageHtml)) {
+  if (/privacy[-_ ]?policy|cookie[-_ ]?policy|\/privacy|informativa|cookie-law|pol[ií]tica[-_ ]?de[-_ ]?privacidad|aviso[-_ ]?legal/i.test(homepageHtml)) {
     return true; // already linked from the homepage
   }
   let base: URL;
@@ -225,11 +225,12 @@ async function policyExists(website: string, homepageHtml: string): Promise<bool
   const paths = [
     "/privacy-policy", "/privacy", "/cookie-policy", "/privacy-policy/",
     "/cookie-policy/", "/informativa-privacy", "/privacy.html", "/cookie",
+    "/politica-de-privacidad", "/aviso-legal", "/politica-de-cookies", "/proteccion-de-datos",
   ];
   for (const p of paths) {
     try {
       const html = await fetchPage(new URL(p, base).toString(), 6000);
-      if (/privacy|informativa|cookie|gdpr|dati personali|data protection/i.test(html) &&
+      if (/privacy|informativa|cookie|gdpr|dati personali|data protection|privacidad|protecci[oó]n de datos|aviso legal/i.test(html) &&
           html.trim().length > 300) {
         return true;
       }

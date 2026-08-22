@@ -49,6 +49,17 @@ test("policyPresent hint overrides homepage regex and lowers Compliant exposure"
   );
 });
 
+test("Spanish site with CIF and política de privacidad reads as compliant", () => {
+  const html = `<html><head>
+    <script type="application/ld+json">{}</script>
+    <script src="cookiebot.js"></script>
+    <script src="https://www.googletagmanager.com/gtag/js"></script>
+    <a href="/politica-de-privacidad">privacidad</a> CIF B12345678
+  </head><body>hubspot</body></html>`;
+  const r = detectTechSignals(html);
+  assert.equal(r.pillars.compliant, 0, `compliant was ${r.pillars.compliant}`);
+});
+
 test("tracking without consent yields a GDPR hook grounded in what was seen", () => {
   const html = `<html><head><script src="https://www.googletagmanager.com/gtag/js"></script></head>
     <body>partita iva 123 <a href="/privacy-policy">privacy</a></body></html>`;
