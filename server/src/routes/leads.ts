@@ -414,4 +414,46 @@ router.post("/score-lead", async (req, res) => {
   }
 });
 
+// CSV export — workaround for sandbox restrictions on blob downloads
+router.post("/export-csv", (req, res) => {
+  try {
+    const { filename } = req.body;
+    let data;
+    try {
+      data = JSON.parse(req.body.data);
+    } catch {
+      res.status(400).json({ error: "Invalid data — must be JSON-encoded array" });
+      return;
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      res.status(400).json({ error: "Missing or empty data array" });
+      return;
+    }
+    if (!filename) {
+      res.status(400).json({ error: "Missing filename" });
+      return;
+    }
+
+    const keys = Object.keys(data[0]);
+    const header = keys.map(k => `"${String(k).replace(/"/g, '""')}"`).join(",");
+    const rows = data.map(row =>
+      keys.map(k => {
+        const v = row[k];
+        if (v === null || v === undefined) return "";
+        if (typeof v === "string") return `"${v.replace(/"/g, '""')}"`;
+        return String(v);
+      }).join(",")
+    );
+    const csv = [header, ...rows].join("\n");
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.send(csv);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("export-csv failed:", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
 export default router;

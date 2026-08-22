@@ -182,27 +182,44 @@ export default function LeadGen() {
     });
   }
 
-  function exportCSV() {
-    const headers = ["Name", "Domain", "Verdict", "Exposure", "Found", "Secure", "Compliant", "CMS", "CVE Risk", "Signals", "Email Hook", "Address", "Rating", "Reviews", "Wappalyzer", "Sucuri"];
+  async function exportCSV() {
     const rows = leads
       .filter(l => l.scoring === "done")
       .sort((a, b) => (b.composite ?? 0) - (a.composite ?? 0))
-      .map(l => [
-        l.name, l.domain, displayVerdict(l), l.exposure,
-        l.pillars.found, l.pillars.secure, l.pillars.compliant,
-        l.cms, l.cveRisk ? "YES" : "no",
-        l.signals.join("; "),
-        l.emailHook,
-        l.address, l.rating ?? "", l.reviewCount,
-        l.wappalyzerUrl ?? "", l.sucuriUrl ?? "",
-      ]);
-    const csv = [headers, ...rows]
-      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = `leads-${niche}-${location}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+      .map(l => ({
+        Name: l.name, Domain: l.domain, Verdict: displayVerdict(l), Exposure: l.exposure,
+        Found: l.pillars.found, Secure: l.pillars.secure, Compliant: l.pillars.compliant,
+        CMS: l.cms, "CVE Risk": l.cveRisk ? "YES" : "no",
+        Signals: l.signals.join("; "),
+        "Email Hook": l.emailHook,
+        Address: l.address, Rating: l.rating ?? "", Reviews: l.reviewCount,
+        Wappalyzer: l.wappalyzerUrl ?? "", Sucuri: l.sucuriUrl ?? "",
+      }));
+    const filename = `leads-${niche}-${location}-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    // POST to server rather than building a blob URL client-side — sandboxed
+    // deployments block synthetic <a download> clicks, but a normal form
+    // navigation to a server response with Content-Disposition works.
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/api/export-csv";
+    form.target = "_blank";
+
+    const dataField = document.createElement("input");
+    dataField.type = "hidden";
+    dataField.name = "data";
+    dataField.value = JSON.stringify(rows);
+    form.appendChild(dataField);
+
+    const filenameField = document.createElement("input");
+    filenameField.type = "hidden";
+    filenameField.name = "filename";
+    filenameField.value = filename;
+    form.appendChild(filenameField);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
   }
 
   const hot = leads.filter(l => l.verdict === "Hot" && l.scoring === "done").length;
