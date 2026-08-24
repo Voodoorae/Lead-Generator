@@ -203,7 +203,6 @@ export default function LeadGen() {
     const form = document.createElement("form");
     form.method = "POST";
     form.action = "/api/export-csv";
-    form.target = "_blank";
 
     const dataField = document.createElement("input");
     dataField.type = "hidden";
