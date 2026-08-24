@@ -81,6 +81,12 @@ export default function LeadGen() {
 
   // ── Step 1: Search ─────────────────────────────────────────────────────────
   async function fetchLeads() {
+    // Abort any in-flight scoring loop from a previous search — otherwise it
+    // keeps running against its own stale closure and overwrites the new
+    // search's results out from under it.
+    abortRef.current?.abort();
+    setScoring(false);
+
     setLoading(true);
     setError(null);
     setSearched(true);
