@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { safeFetch } from "../lib/safe-url.js";
+import { pool, ensureSchema } from "../lib/db.js";
 
 const router: IRouter = Router();
 
@@ -452,6 +453,140 @@ router.post("/export-csv", (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("export-csv failed:", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── Route: save a scored batch to Postgres ───────────────────────────────────
+// Called once after scoreAll() finishes client-side, not per-lead — one round
+// trip per search instead of sixty. Upserts on (domain, niche, location) so
+// re-scanning the same area updates rather than duplicates.
+interface SavedLead {
+  name: string;
+  domain: string;
+  verdict: string;
+  exposure: number;
+  pillars: { found: number; secure: number; compliant: number };
+  cms: string;
+  cveRisk: boolean;
+  signals: string[];
+  emailHook: string;
+  address: string;
+  rating: number | null;
+  reviewCount: number;
+}
+
+router.post("/leads/save", async (req, res) => {
+  if (!pool) {
+    res.json({ saved: 0, note: "DATABASE_URL not configured — not persisted" });
+    return;
+  }
+
+  const { niche, location, leads } = req.body as {
+    niche?: string;
+    location?: string;
+    leads?: SavedLead[];
+  };
+
+  if (!niche || !location || !Array.isArray(leads)) {
+    res.status(400).json({ error: "Missing niche, location, or leads array" });
+    return;
+  }
+
+  // Only leads with a real domain (excludes "no-website" rows) satisfy the
+  // dedup key and are worth persisting.
+  const rows = leads.filter((l) => l.domain && l.domain.trim());
+
+  try {
+    await ensureSchema();
+    for (const l of rows) {
+      await pool.query(
+        `INSERT INTO leads
+           (name, domain, verdict, exposure, pillars, cms, cve_risk, signals,
+            email_hook, address, rating, reviews, niche, location, scanned_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
+         ON CONFLICT (domain, niche, location) DO UPDATE SET
+           name = EXCLUDED.name, verdict = EXCLUDED.verdict, exposure = EXCLUDED.exposure,
+           pillars = EXCLUDED.pillars, cms = EXCLUDED.cms, cve_risk = EXCLUDED.cve_risk,
+           signals = EXCLUDED.signals, email_hook = EXCLUDED.email_hook,
+           address = EXCLUDED.address, rating = EXCLUDED.rating, reviews = EXCLUDED.reviews,
+           scanned_at = now()`,
+        [
+          l.name, l.domain, l.verdict, l.exposure, JSON.stringify(l.pillars),
+          l.cms, l.cveRisk, JSON.stringify(l.signals), l.emailHook, l.address,
+          l.rating, l.reviewCount, niche, location,
+        ],
+      );
+    }
+    res.json({ saved: rows.length, skipped: leads.length - rows.length });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("leads/save failed:", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── Route: export the accumulated master CSV for one location ───────────────
+// Distinct from POST /export-csv above (which exports only the current
+// in-browser batch): this queries everything ever saved for a location,
+// across every session, replacing the manual merge-CSVs workflow.
+router.get("/leads/export", async (req, res) => {
+  if (!pool) {
+    res.status(503).json({ error: "DATABASE_URL not configured — no persisted leads to export" });
+    return;
+  }
+
+  const location = req.query.location as string | undefined;
+  if (!location) {
+    res.status(400).json({ error: "Missing location query param" });
+    return;
+  }
+
+  try {
+    await ensureSchema();
+    const result = await pool.query(
+      `SELECT name, domain, verdict, exposure, pillars, cms, cve_risk, signals,
+              email_hook, address, rating, reviews, niche, scanned_at
+       FROM leads WHERE location = $1
+       ORDER BY exposure DESC NULLS LAST`,
+      [location],
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: `No saved leads found for location "${location}"` });
+      return;
+    }
+
+    const header = [
+      "Name", "Domain", "Verdict", "Exposure", "Found", "Secure", "Compliant",
+      "CMS", "CVE Risk", "Signals", "Email Hook", "Address", "Rating", "Reviews",
+      "Niche", "Scanned At",
+    ].map((h) => `"${h}"`).join(",");
+
+    const csvRows = result.rows.map((r) => {
+      const pillars = r.pillars ?? { found: "", secure: "", compliant: "" };
+      const signals = Array.isArray(r.signals) ? r.signals.join("; ") : "";
+      const cells = [
+        r.name, r.domain, r.verdict, r.exposure, pillars.found, pillars.secure,
+        pillars.compliant, r.cms, r.cve_risk ? "YES" : "no", signals, r.email_hook,
+        r.address, r.rating ?? "", r.reviews, r.niche, r.scanned_at,
+      ];
+      return cells.map((v) => {
+        if (v === null || v === undefined) return "";
+        if (typeof v === "string") return `"${v.replace(/"/g, '""')}"`;
+        return String(v);
+      }).join(",");
+    });
+
+    const csv = [header, ...csvRows].join("\n");
+    const filename = `MASTER-${location}-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.send(csv);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("leads/export failed:", msg);
     res.status(500).json({ error: msg });
   }
 });

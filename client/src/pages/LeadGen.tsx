@@ -172,6 +172,31 @@ export default function LeadGen() {
     // Final authoritative banding pass over the complete batch.
     setLeads(reband(sortByComposite(updated)));
     setScoring(false);
+
+    // Persist the batch once, not per-lead — best-effort, never blocks the UI.
+    if (!abort.signal.aborted) saveBatch(updated);
+  }
+
+  async function saveBatch(scored: ScoredLead[]) {
+    const rows = scored.filter(l => l.scoring === "done");
+    if (rows.length === 0) return;
+    try {
+      await fetch("/api/leads/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          niche, location,
+          leads: rows.map(l => ({
+            name: l.name, domain: l.domain, verdict: displayVerdict(l),
+            exposure: l.exposure, pillars: l.pillars, cms: l.cms, cveRisk: l.cveRisk,
+            signals: l.signals, emailHook: l.emailHook, address: l.address,
+            rating: l.rating, reviewCount: l.reviewCount,
+          })),
+        }),
+      });
+    } catch {
+      // Non-fatal — CSV export from the current batch still works regardless.
+    }
   }
 
   function stopScoring() {
@@ -320,6 +345,15 @@ export default function LeadGen() {
               {done > 0 && (
                 <button onClick={exportCSV} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #233344", background: "#101922", color: "#8fa3b5", cursor: "pointer", fontSize: 12, ...mono }}>
                   ⬇ Export CSV
+                </button>
+              )}
+              {done > 0 && (
+                <button
+                  onClick={() => window.open(`/api/leads/export?location=${encodeURIComponent(location)}`, "_blank")}
+                  title="Every lead ever saved for this location, across all niches and past sessions"
+                  style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #233344", background: "#101922", color: "#8fa3b5", cursor: "pointer", fontSize: 12, ...mono }}
+                >
+                  ⬇ Export Master CSV ({location})
                 </button>
               )}
             </div>
