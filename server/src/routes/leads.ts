@@ -415,13 +415,18 @@ router.post("/score-lead", async (req, res) => {
       return;
     }
 
-    // Step 2: Fetch homepage (up to ~80KB so footer scripts/links are seen).
+    // Step 2: Fetch homepage. Tech-signal scoring only needs the first ~80KB
+    // (head/nav markup), but a mailto: link is often deep in the footer of a
+    // large page — cap that at a much higher ceiling so it isn't invisible to
+    // email extraction on bigger sites.
     let pageHtml = "";
+    let fullHtml = "";
     let fetchNote = "";
     try {
       const contents = await fetchPage(website);
       if (contents) {
         pageHtml = contents.substring(0, 80000);
+        fullHtml = contents.substring(0, 500000);
         fetchNote = "Page source fetched";
       } else {
         fetchNote = "Could not read page — likely behind WAF/Cloudflare";
@@ -435,10 +440,11 @@ router.post("/score-lead", async (req, res) => {
     // actually read the homepage.
     const policyPresent = pageHtml ? await policyExists(website, pageHtml) : undefined;
 
-    // Step 3b: Extract a contact email from the same fetch, falling back to a
-    // same-domain contact page. Best-effort — null just means "not found",
-    // it never blocks or delays the score itself.
-    const contactEmail = pageHtml ? await findContactEmail(website, pageHtml, domain) : null;
+    // Step 3b: Extract a contact email from the same fetch (using the fuller
+    // capture, not the scoring-only 80KB slice), falling back to a same-domain
+    // contact page. Best-effort — null just means "not found", it never
+    // blocks or delays the score itself.
+    const contactEmail = fullHtml ? await findContactEmail(website, fullHtml, domain) : null;
 
     // Step 4: Score from tech signals.
     const tech = detectTechSignals(pageHtml, { policyPresent });
