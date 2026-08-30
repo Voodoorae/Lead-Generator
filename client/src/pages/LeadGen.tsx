@@ -18,6 +18,7 @@ type ScoredLead = Lead & {
   website: string;
   domain: string;
   status: LeadStatus;      // scored / unreadable / no-website / pending / error
+  email: string | null;
   pillars: Pillars;
   severity: { found: Severity; secure: Severity; compliant: Severity };
   exposure: number;        // 0–100 composite of the three pillars (from server)
@@ -104,7 +105,7 @@ export default function LeadGen() {
         setError(data.error ?? "Failed to fetch leads");
       } else {
         const raw: ScoredLead[] = (data.leads ?? []).map((l: Lead) => ({
-          ...l, website: "", domain: "", status: "pending" as const,
+          ...l, website: "", domain: "", status: "pending" as const, email: null,
           pillars: { found: 0, secure: 0, compliant: 0 },
           severity: { found: "ok" as const, secure: "ok" as const, compliant: "ok" as const },
           exposure: 0, composite: 0, verdict: "Cold" as const,
@@ -189,7 +190,7 @@ export default function LeadGen() {
           leads: rows.map(l => ({
             name: l.name, domain: l.domain, verdict: displayVerdict(l),
             exposure: l.exposure, pillars: l.pillars, cms: l.cms, cveRisk: l.cveRisk,
-            signals: l.signals, emailHook: l.emailHook, address: l.address,
+            signals: l.signals, emailHook: l.emailHook, email: l.email, address: l.address,
             rating: l.rating, reviewCount: l.reviewCount,
           })),
         }),
@@ -223,6 +224,7 @@ export default function LeadGen() {
         CMS: l.cms, "CVE Risk": l.cveRisk ? "YES" : "no",
         Signals: l.signals.join("; "),
         "Email Hook": l.emailHook,
+        Email: l.email ?? "",
         Address: l.address, Rating: l.rating ?? "", Reviews: l.reviewCount,
         Wappalyzer: l.wappalyzerUrl ?? "", Sucuri: l.sucuriUrl ?? "",
       }));
@@ -439,6 +441,12 @@ export default function LeadGen() {
                         <div style={{ fontSize: 11, color: "#4a6070", marginTop: 4 }}>
                           ★ {lead.rating} · {lead.reviewCount.toLocaleString()} reviews
                         </div>
+                      )}
+                      {lead.scoring === "done" && lead.email && (
+                        <a href={`mailto:${lead.email}`}
+                          style={{ ...mono, fontSize: 11, color: "#97c459", textDecoration: "none", display: "block", marginTop: 4 }}>
+                          ✉ {lead.email}
+                        </a>
                       )}
                     </div>
 

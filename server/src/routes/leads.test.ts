@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectTechSignals } from "./leads.js";
+import { detectTechSignals, extractEmailFromHtml } from "./leads.js";
 
 test("worst-case WP site (tracking, no consent, CVE plugins) fails all pillars hard", () => {
   const html = `<html><head>
@@ -65,4 +65,35 @@ test("tracking without consent yields a GDPR hook grounded in what was seen", ()
     <body>partita iva 123 <a href="/privacy-policy">privacy</a></body></html>`;
   const r = detectTechSignals(html);
   assert.match(r.emailHook, /consent|gdpr|tracking/i);
+});
+
+test("extractEmailFromHtml prefers a mailto: link over incidental text", () => {
+  const html = `<html><body>
+    <a href="mailto:office@example.com">Email us</a>
+    Also reach jane.doe@example.com for sales.
+  </body></html>`;
+  assert.equal(extractEmailFromHtml(html, "example.com"), "office@example.com");
+});
+
+test("extractEmailFromHtml falls back to regex-scanned text when no mailto link exists", () => {
+  const html = `<html><body>Contact: info@example.com for details</body></html>`;
+  assert.equal(extractEmailFromHtml(html, "example.com"), "info@example.com");
+});
+
+test("extractEmailFromHtml prefers a generic inbox over a personal-looking address", () => {
+  const html = `<html><body>jane.doe@example.com or contact@example.com</body></html>`;
+  assert.equal(extractEmailFromHtml(html, "example.com"), "contact@example.com");
+});
+
+test("extractEmailFromHtml ignores off-domain and image-filename false positives", () => {
+  const html = `<html><body>
+    <img src="logo@2x.png">
+    Reach out via support@some-widget-vendor.com or visit us.
+  </body></html>`;
+  assert.equal(extractEmailFromHtml(html, "example.com"), null);
+});
+
+test("extractEmailFromHtml returns null with no email present", () => {
+  const html = `<html><body>No contact details here.</body></html>`;
+  assert.equal(extractEmailFromHtml(html, "example.com"), null);
 });

@@ -26,6 +26,7 @@ export function ensureSchema(): Promise<void> {
         cve_risk BOOLEAN,
         signals JSONB,
         email_hook TEXT,
+        email TEXT,
         address TEXT,
         rating REAL,
         reviews INTEGER,
@@ -34,7 +35,11 @@ export function ensureSchema(): Promise<void> {
         scanned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         UNIQUE (domain, niche, location)
       )
-    `).then(() => undefined);
+    `).then(() =>
+      // CREATE TABLE IF NOT EXISTS won't add columns to a table that already
+      // exists (e.g. on a live deploy that predates the email column).
+      pool!.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS email TEXT`)
+    ).then(() => undefined);
   }
   return schemaReady;
 }

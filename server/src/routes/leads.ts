@@ -214,6 +214,53 @@ async function fetchPage(target: string, timeoutMs = 10000): Promise<string> {
   }
 }
 
+// Pull a contact email out of page HTML: mailto: links first (highest
+// confidence — it's a click target, not incidental text), then a regex sweep
+// of visible text for common inbox prefixes. Skips image/tracking-pixel
+// addresses and anything on a third-party domain (e.g. a Gravatar or widget
+// script leaking its own vendor address).
+const GENERIC_PREFIXES = /^(info|contact|office|hello|enquiries|enquiry|admin|mail)@/i;
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+export function extractEmailFromHtml(html: string, domain: string): string | null {
+  if (!html || !domain) return null;
+
+  const mailtoMatch = html.match(/mailto:([^"'?\s>]+)/i);
+  if (mailtoMatch) {
+    const addr = mailtoMatch[1].trim();
+    if (EMAIL_RE.test(addr)) return addr.toLowerCase();
+  }
+
+  const found = html.match(EMAIL_RE) ?? [];
+  const candidates = found
+    .map((e) => e.toLowerCase())
+    .filter((e) => !/\.(png|jpe?g|gif|svg|webp)$/i.test(e)) // image filenames matched as "x@2x.png" style
+    .filter((e) => e.endsWith(`@${domain}`) || e.includes(domain));
+
+  if (candidates.length === 0) return null;
+  // Prefer a generic company inbox (info@, contact@, …) over a personal-looking one.
+  return candidates.find((e) => GENERIC_PREFIXES.test(e)) ?? candidates[0];
+}
+
+// If the homepage has no usable email, probe common contact-page paths on the
+// same domain — the same pattern policyExists() uses for privacy pages.
+async function findContactEmail(website: string, homepageHtml: string, domain: string): Promise<string | null> {
+  const fromHome = extractEmailFromHtml(homepageHtml, domain);
+  if (fromHome) return fromHome;
+
+  let base: URL;
+  try { base = new URL(website); } catch { return null; }
+  const paths = ["/contact", "/contact-us", "/contacts", "/contatti", "/contacto"];
+  for (const p of paths) {
+    try {
+      const html = await fetchPage(new URL(p, base).toString(), 6000);
+      const email = extractEmailFromHtml(html, domain);
+      if (email) return email;
+    } catch { /* try next path */ }
+  }
+  return null;
+}
+
 // Confirm a privacy/cookie policy actually exists before the Compliant pillar
 // claims it's missing. Policies live on subpages, not the homepage, so probe the
 // common paths (EN + IT) and only trust a page that reads like a real policy.
@@ -355,6 +402,7 @@ router.post("/score-lead", async (req, res) => {
         website: "",
         domain: "",
         status: "no-website",
+        email: null,
         pillars: { found: 0, secure: 0, compliant: 0 },
         severity: { found: "ok", secure: "ok", compliant: "ok" },
         exposure: 0,
@@ -387,6 +435,11 @@ router.post("/score-lead", async (req, res) => {
     // actually read the homepage.
     const policyPresent = pageHtml ? await policyExists(website, pageHtml) : undefined;
 
+    // Step 3b: Extract a contact email from the same fetch, falling back to a
+    // same-domain contact page. Best-effort — null just means "not found",
+    // it never blocks or delays the score itself.
+    const contactEmail = pageHtml ? await findContactEmail(website, pageHtml, domain) : null;
+
     // Step 4: Score from tech signals.
     const tech = detectTechSignals(pageHtml, { policyPresent });
     const status = tech.readable ? "scored" : "unreadable";
@@ -397,6 +450,7 @@ router.post("/score-lead", async (req, res) => {
       website,
       domain,
       status,
+      email: contactEmail,
       pillars: tech.pillars,
       severity: tech.severity,
       exposure: tech.exposure,
@@ -471,6 +525,7 @@ interface SavedLead {
   cveRisk: boolean;
   signals: string[];
   emailHook: string;
+  email: string | null;
   address: string;
   rating: number | null;
   reviewCount: number;
@@ -503,17 +558,18 @@ router.post("/leads/save", async (req, res) => {
       await pool.query(
         `INSERT INTO leads
            (name, domain, verdict, exposure, pillars, cms, cve_risk, signals,
-            email_hook, address, rating, reviews, niche, location, scanned_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
+            email_hook, email, address, rating, reviews, niche, location, scanned_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
          ON CONFLICT (domain, niche, location) DO UPDATE SET
            name = EXCLUDED.name, verdict = EXCLUDED.verdict, exposure = EXCLUDED.exposure,
            pillars = EXCLUDED.pillars, cms = EXCLUDED.cms, cve_risk = EXCLUDED.cve_risk,
            signals = EXCLUDED.signals, email_hook = EXCLUDED.email_hook,
+           email = EXCLUDED.email,
            address = EXCLUDED.address, rating = EXCLUDED.rating, reviews = EXCLUDED.reviews,
            scanned_at = now()`,
         [
           l.name, l.domain, l.verdict, l.exposure, JSON.stringify(l.pillars),
-          l.cms, l.cveRisk, JSON.stringify(l.signals), l.emailHook, l.address,
+          l.cms, l.cveRisk, JSON.stringify(l.signals), l.emailHook, l.email ?? null, l.address,
           l.rating, l.reviewCount, niche, location,
         ],
       );
@@ -546,7 +602,7 @@ router.get("/leads/export", async (req, res) => {
     await ensureSchema();
     const result = await pool.query(
       `SELECT name, domain, verdict, exposure, pillars, cms, cve_risk, signals,
-              email_hook, address, rating, reviews, niche, scanned_at
+              email_hook, email, address, rating, reviews, niche, scanned_at
        FROM leads WHERE location = $1
        ORDER BY exposure DESC NULLS LAST`,
       [location],
@@ -559,7 +615,7 @@ router.get("/leads/export", async (req, res) => {
 
     const header = [
       "Name", "Domain", "Verdict", "Exposure", "Found", "Secure", "Compliant",
-      "CMS", "CVE Risk", "Signals", "Email Hook", "Address", "Rating", "Reviews",
+      "CMS", "CVE Risk", "Signals", "Email Hook", "Email", "Address", "Rating", "Reviews",
       "Niche", "Scanned At",
     ].map((h) => `"${h}"`).join(",");
 
@@ -568,7 +624,7 @@ router.get("/leads/export", async (req, res) => {
       const signals = Array.isArray(r.signals) ? r.signals.join("; ") : "";
       const cells = [
         r.name, r.domain, r.verdict, r.exposure, pillars.found, pillars.secure,
-        pillars.compliant, r.cms, r.cve_risk ? "YES" : "no", signals, r.email_hook,
+        pillars.compliant, r.cms, r.cve_risk ? "YES" : "no", signals, r.email_hook, r.email,
         r.address, r.rating ?? "", r.reviews, r.niche, r.scanned_at,
       ];
       return cells.map((v) => {
