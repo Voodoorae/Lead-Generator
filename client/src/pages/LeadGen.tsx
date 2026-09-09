@@ -351,7 +351,20 @@ export default function LeadGen() {
               )}
               {done > 0 && (
                 <button
-                  onClick={() => window.open(`/api/leads/export?location=${encodeURIComponent(location)}`, "_blank")}
+                  onClick={() => {
+                    // Same-frame navigation to a Content-Disposition:attachment
+                    // URL triggers a download without leaving the SPA — no new
+                    // tab. window.open(url, "_blank") was used here before, but
+                    // that leaves a background tab pointed at a live download
+                    // URL that the browser can silently reload (tab discard/
+                    // wake to save memory), re-triggering the download each
+                    // time with no click from the user.
+                    const a = document.createElement("a");
+                    a.href = `/api/leads/export?location=${encodeURIComponent(location)}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
                   title="Every lead ever saved for this location, across all niches and past sessions"
                   style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #233344", background: "#101922", color: "#8fa3b5", cursor: "pointer", fontSize: 12, ...mono }}
                 >
