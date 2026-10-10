@@ -3,7 +3,11 @@ import { londonWindow, dailySearch, holdReason } from './prospecting-policy.mjs'
 import { postLeadJson } from './lead-api.mjs';
 
 const window = londonWindow();
-if (!window.due && process.env.PROSPECTING_MANUAL_RUN !== 'true') {
+// A test override must name today's UK date, so a forgotten flag cannot
+// override weekday/time guards indefinitely.
+const manualTest = process.env.PROSPECTING_MANUAL_RUN === 'true'
+  && process.env.PROSPECTING_TEST_DATE === window.date;
+if (!window.due && !manualTest) {
   console.log(JSON.stringify({ status: 'outside-london-window', sent: 0 }));
   process.exit(0);
 }
