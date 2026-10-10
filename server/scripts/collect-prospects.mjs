@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { londonWindow, dailySearch, holdReason } from './prospecting-policy.mjs';
+import { postLeadJson } from './lead-api.mjs';
 
 const window = londonWindow();
 if (!window.due && process.env.PROSPECTING_MANUAL_RUN !== 'true') {
@@ -19,12 +20,7 @@ const db = await pool.connect();
 const search = dailySearch(window.date);
 let ownsLock = false;
 async function post(path, body) {
-  const response = await fetch(new URL(path, api), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body), signal: AbortSignal.timeout(240000),
-  });
-  if (!response.ok) throw new Error(`Lead Generator HTTP ${response.status}`);
-  return response.json();
+  return postLeadJson(new URL(path, api), body);
 }
 try {
   const lock = await db.query('SELECT pg_try_advisory_lock($1) AS acquired', [7101026]);
