@@ -1,6 +1,8 @@
 import pg from 'pg';
 import { londonWindow, dailySearch, holdReason } from './prospecting-policy.mjs';
 import { postLeadJson } from './lead-api.mjs';
+import { internalReadiness } from './internal-readiness.mjs';
+import { runOutreach } from './run-outreach.mjs';
 
 const window = londonWindow();
 // A test override must name today's UK date, so a forgotten flag cannot
@@ -74,4 +76,5 @@ try {
   db.release();
   await pool.end();
 }
-
+if (process.env.GHL_API_TOKEN && process.env.GHL_LOCATION_ID) console.log(JSON.stringify(await internalReadiness()));
+await runOutreach(window.date);

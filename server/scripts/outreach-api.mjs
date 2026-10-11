@@ -1,0 +1,60 @@
+const BASE = 'https://services.leadconnectorhq.com';
+const idPattern = /^[A-Za-z0-9_-]+$/;
+export function apiClient({ token, locationId, fetchImpl = fetch }) {
+  if (!token || /[\r\n]/.test(token) || !idPattern.test(locationId || '')) throw new Error('CRM configuration invalid');
+  return async (method, path, { query = {}, body, version = '2021-07-28' } = {}) => {
+    const contactRead = /^\/contacts\/[A-Za-z0-9_-]+$/.test(path);
+    const tagsWrite = /^\/contacts\/[A-Za-z0-9_-]+\/tags$/.test(path);
+    const messageRead = /^\/conversations\/messages\/(?:email\/)?[A-Za-z0-9_-]+$/.test(path);
+    const allowed = method === 'GET' ? contactRead || messageRead || ['/conversations/messages/export','/conversations/search'].includes(path)
+      : method === 'POST' && (tagsWrite || ['/contacts/search','/contacts/','/email/verify','/conversations/messages'].includes(path));
+    if (!allowed) throw new Error('CRM operation not allowed');
+    const url = new URL(path, BASE);
+    for (const [k,v] of Object.entries({ ...query, locationId })) if (v !== undefined) url.searchParams.set(k, String(v));
+    const scopedBody = body === undefined ? undefined : { ...body, locationId };
+    let response;
+    try {
+      response = await fetchImpl(url, { method, redirect:'error', signal:AbortSignal.timeout(25000),
+        headers:{ Authorization:'Bearer ' + token, Version:version, Accept:'application/json', 'Content-Type':'application/json' },
+        ...(scopedBody && {body:JSON.stringify(scopedBody)}) });
+    } catch { throw new Error('CRM request network or timeout failure'); }
+    if (!response.ok) throw new Error('CRM request HTTP ' + response.status);
+    try { return await response.json(); } catch { throw new Error('CRM response invalid JSON'); }
+  };
+}
+export async function allContacts(api) {
+  const contacts = [], seen = new Set();
+  let searchAfter;
+  for (let page = 0; page < 100; page++) {
+    const result = await api('POST','/contacts/search',{body:{pageLimit:100, sort:[{field:'dateAdded',direction:'asc'}], ...(searchAfter && {searchAfter})}});
+    if (!Array.isArray(result.contacts) || !Number.isInteger(result.total)) throw new Error('CRM contact pagination invalid');
+    for (const c of result.contacts) {
+      if (!c.id || seen.has(c.id)) throw new Error('CRM contact pagination repeated or missing ID');
+      seen.add(c.id); contacts.push(c);
+    }
+    if (contacts.length >= result.total) return contacts;
+    const next = result.contacts.at(-1)?.searchAfter;
+    if (!Array.isArray(next) || !next.length || JSON.stringify(next) === JSON.stringify(searchAfter)) throw new Error('CRM contact pagination incomplete');
+    searchAfter = next;
+  }
+  throw new Error('CRM contact pagination limit exceeded');
+}
+export async function emailHistory(api, query) {
+  const messages = [], seen = new Set(), cursors = new Set();
+  let cursor;
+  for (let page = 0; page < 100; page++) {
+    const data = await api('GET','/conversations/messages/export',{query:{...query,channel:'Email',limit:100,...(cursor && {cursor})}});
+    if (!Array.isArray(data.messages)) throw new Error('CRM email history invalid');
+    for (const m of data.messages) {
+      if (!m.id || seen.has(m.id)) throw new Error('CRM history repeated or missing ID');
+      seen.add(m.id); messages.push(m);
+    }
+    if (!data.nextCursor) {
+      if (Number.isInteger(data.total) && messages.length < data.total) throw new Error('CRM history incomplete');
+      return messages;
+    }
+    if (cursors.has(data.nextCursor)) throw new Error('CRM history cursor repeated');
+    cursors.add(data.nextCursor); cursor = data.nextCursor;
+  }
+  throw new Error('CRM history pagination limit exceeded');
+}
