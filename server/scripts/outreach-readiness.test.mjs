@@ -63,6 +63,9 @@ test('API client scopes location, rejects redirects and never leaks errors',asyn
   assert.equal(JSON.parse(seen.options.body).locationId,'allowed');
   assert.equal(seen.url.origin,'https://services.leadconnectorhq.com');
   assert.equal(seen.options.redirect,'error');
+  await api('POST','/email/verify',{body:{type:'email',verify:'info@example.com'},version:'v3'});
+  assert.deepEqual(JSON.parse(seen.options.body),{type:'email',verify:'info@example.com'});
+  assert.equal(seen.url.searchParams.get('locationId'),'allowed');
   await assert.rejects(api('POST','https://evil.example'),/not allowed/);
   const fail=apiClient({token:'private',locationId:'allowed',fetchImpl:async()=>{throw new Error('private');}});
   await assert.rejects(fail('POST','/contacts/'),{message:'CRM request network or timeout failure'});

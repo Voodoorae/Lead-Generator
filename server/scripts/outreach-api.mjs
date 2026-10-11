@@ -11,14 +11,19 @@ export function apiClient({ token, locationId, fetchImpl = fetch }) {
     if (!allowed) throw new Error('CRM operation not allowed');
     const url = new URL(path, BASE);
     for (const [k,v] of Object.entries({ ...query, locationId })) if (v !== undefined) url.searchParams.set(k, String(v));
-    const scopedBody = body === undefined ? undefined : { ...body, locationId };
+    // Contacts create/search require locationId in the body. Other operations
+    // use the query/token scope and reject undeclared body fields with HTTP 422.
+    const scopedBody = body === undefined ? undefined : ['/contacts/','/contacts/search'].includes(path) ? { ...body, locationId } : body;
     let response;
     try {
       response = await fetchImpl(url, { method, redirect:'error', signal:AbortSignal.timeout(25000),
         headers:{ Authorization:'Bearer ' + token, Version:version, Accept:'application/json', 'Content-Type':'application/json' },
         ...(scopedBody && {body:JSON.stringify(scopedBody)}) });
     } catch { throw new Error('CRM request network or timeout failure'); }
-    if (!response.ok) throw new Error('CRM request HTTP ' + response.status);
+    if (!response.ok) {
+      const operation=path==='/email/verify'?'email-verification':path==='/conversations/messages'?'email-send':tagsWrite?'contact-tag-write':contactRead?'contact-read':path==='/contacts/'?'contact-create':path==='/contacts/search'?'contact-search':'email-history-read';
+      throw new Error('CRM ' + operation + ' HTTP ' + response.status);
+    }
     try { return await response.json(); } catch { throw new Error('CRM response invalid JSON'); }
   };
 }
