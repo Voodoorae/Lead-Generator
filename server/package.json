@@ -6,7 +6,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "test": "node --import tsx --test src/routes/leads.test.ts"
+    "test": "node --import tsx --test src/routes/leads.test.ts",
+    "postinstall": "node scripts/check-crm.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
