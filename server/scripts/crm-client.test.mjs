@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crmClient, checkCrm } from './crm-client.mjs';
 const locationId = 'testLocation';
-const options = { token: 'test-secret', locationId };
+const options = { token: 'test-secret', locationId, probeContactId: 'testContact' };
 const response = data => ({ ok: true, json: async () => data });
 test('probe makes bounded reads, scopes location and never returns contact details', async () => {
   const seen = [];
