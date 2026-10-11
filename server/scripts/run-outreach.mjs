@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { apiClient, allContacts, emailHistory } from './outreach-api.mjs';
+import { apiClient, allContacts, emailHistory, emailDetail } from './outreach-api.mjs';
 import { qualifyWebsite } from './website-evidence.mjs';
 import { duplicate, companyKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, outboundCount, campaignLimit } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
@@ -16,6 +16,12 @@ export async function runOutreach(date) {
   const api = apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
   const pool = new pg.Pool({connectionString:process.env.DATABASE_URL}), db=await pool.connect();
   let ownsLock=false, accepted=0, held=0, qualified=0;
+  const detailCache=new Map();
+  async function detailed(message) {
+    if(message.direction!=='outbound') return message;
+    if(!detailCache.has(message.id)) detailCache.set(message.id,await emailDetail(api,message,process.env.GHL_LOCATION_ID));
+    return detailCache.get(message.id);
+  }
   try {
     const lock=await db.query('SELECT pg_try_advisory_lock($1) AS acquired',[7101027]);
     if (!lock.rows[0].acquired) throw new Error('Another cloud outreach runner is active');
@@ -28,7 +34,8 @@ export async function runOutreach(date) {
       const since=new Date(Date.parse(date+'T00:00:00Z')-14*86400000).toISOString();
       const history=await emailHistory(api,{startDate:since});
       const sequenceContacts=new Set((await db.query('SELECT contact_id FROM prospecting_sequences WHERE contact_id IS NOT NULL')).rows.map(r=>r.contact_id));
-      const campaignMessages=history.filter(m=>m.direction==='outbound' && sequenceContacts.has(m.contactId));
+      const campaignMessages=[];
+      for(const message of history.filter(m=>m.direction==='outbound' && sequenceContacts.has(m.contactId))) campaignMessages.push(await detailed(message));
       const delivered=campaignMessages.filter(m=>['delivered','opened','read'].includes(m.status)).length;
       const failed=campaignMessages.filter(m=>['failed','undelivered','bounced'].includes(m.status)).length;
       limit=campaignLimit({configured:limit,delivered,failed});
@@ -42,7 +49,7 @@ export async function runOutreach(date) {
         if(!enabled || accepted>=limit) continue;
         const q=sequence.qualification;
         if(duplicate(q,contacts)) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason='existing-crm-contact' WHERE id=$1",[sequence.id]); continue; }
-        const fresh=await qualifyWebsite({website:q.website,email:q.email},q.company).catch(()=>({hold:'website-evidence-unavailable'}));
+        const fresh=await qualifyWebsite({website:q.website,email:q.email,address:q.address},q.company).catch(()=>({hold:'website-evidence-unavailable'}));
         if(!fresh.candidate) { held++; continue; }
         fresh.candidate.validation=await api('POST','/email/verify',{body:{type:'email',verify:q.email},version:'v3'});
         if(sendHold(fresh.candidate)) { held++; continue; }
@@ -53,13 +60,13 @@ export async function runOutreach(date) {
       const contactResult=await api('GET','/contacts/'+sequence.contact_id);
       const contact=contactResult.contact;
       if (!contact || contact.locationId!==process.env.GHL_LOCATION_ID) throw new Error('Sequence contact account mismatch');
-      const history=await emailHistory(api,{contactId:sequence.contact_id});
+      const history=[];for(const message of await emailHistory(api,{contactId:sequence.contact_id})) history.push(await detailed(message));
       const stop=suppressionReason(contact,history);
       if (stop) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason=$2,updated_at=now() WHERE id=$1",[sequence.id,stop]); continue; }
       if (!enabled || String(sequence.next_date?.toISOString?.().slice(0,10) || sequence.next_date)>date) continue;
       if (accepted>=limit) continue;
       const q=sequence.qualification;
-      const refreshed=await qualifyWebsite({website:q.website,email:q.email},q.company).catch(()=>({hold:'website-evidence-unavailable'}));
+      const refreshed=await qualifyWebsite({website:q.website,email:q.email,address:q.address},q.company).catch(()=>({hold:'website-evidence-unavailable'}));
       if (!refreshed.candidate || refreshed.candidate.route!==q.route) {
         await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason=$2 WHERE id=$1",[sequence.id,refreshed.hold || 'route-changed']); continue;
       }
@@ -71,8 +78,8 @@ export async function runOutreach(date) {
     const candidates=await db.query(`SELECT c.* FROM (SELECT DISTINCT ON (place_id) * FROM prospecting_candidates
       WHERE run_date >= $1::date - interval '14 days' ORDER BY place_id,run_date DESC) c
       LEFT JOIN prospecting_qualifications q USING(place_id)
-      WHERE q.place_id IS NULL OR q.updated_at < now()-interval '3 days' OR ($2 AND q.status='evidence-qualified')
-      ORDER BY c.run_date DESC LIMIT 30`,[date,enabled]);
+      WHERE q.place_id IS NULL OR q.updated_at < now()-interval '3 days' OR ($2 AND q.status='evidence-qualified') OR $3
+      ORDER BY c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date]);
     for (const record of candidates.rows) {
       const score=record.score, identity={company:record.company,website:score.website,email:score.email};
       let result;
@@ -117,7 +124,7 @@ export async function runOutreach(date) {
         // case instead of an automatic second create or a second send.
         await db.query("UPDATE prospecting_sequences SET status='creating-contact' WHERE id=$1",[sequence.id]);
         const created=await api('POST','/contacts/',{body:{email:candidate.email,companyName:candidate.company,website:candidate.website,
-          country:'GB',source:'Proxaim cloud website evidence',tags:['scotland-professional-services','website-visibility-prospect','proxaim-cloud-sequence-'+sequence.id]}});
+          country:'GB',source:'Proxaim cloud website evidence',tags:['scotland-professional-services','website-'+candidate.route+'-prospect','proxaim-cloud-sequence-'+sequence.id]}});
         if (!created.contact?.id || created.contact.locationId!==process.env.GHL_LOCATION_ID) throw new Error('Created contact account mismatch');
         contactId=created.contact.id;
         await db.query("UPDATE prospecting_sequences SET contact_id=$2,status='sending' WHERE id=$1",[sequence.id,contactId]);
@@ -125,7 +132,7 @@ export async function runOutreach(date) {
       // Check current suppression immediately before submitting the email.
       const current=await api('GET','/contacts/'+contactId);
       if (!current.contact || current.contact.locationId!==process.env.GHL_LOCATION_ID || current.contact.email?.toLowerCase()!==candidate.email) throw new Error('Send contact mismatch');
-      const contactHistory=await emailHistory(api,{contactId});
+      const contactHistory=[];for(const message of await emailHistory(api,{contactId})) contactHistory.push(await detailed(message));
       const stopped=suppressionReason(current.contact || {},contactHistory);
       if (stopped) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason=$2 WHERE id=$1",[sequence.id,stopped]); return false; }
       const copy=compose(candidate,stage);

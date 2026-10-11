@@ -1,7 +1,7 @@
 import pg from 'pg';
-import { apiClient, emailHistory } from './outreach-api.mjs';
+import { apiClient, emailHistory, emailDetail } from './outreach-api.mjs';
 import { londonWindow } from './prospecting-policy.mjs';
-import { verifiedEmail, emailKey, outboundCount, suppressionReason } from './outreach-policy.mjs';
+import { verifiedEmail, emailKey, outboundCount, suppressionReason, isReadinessReply } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
 const key='cloud-internal-test-v1';
 export async function internalReadiness({send=false}={}) {
@@ -47,12 +47,16 @@ export async function internalReadiness({send=false}={}) {
     if (!attempt) return {status:'internal-test-not-run',sent:0};
     if (attempt.status!=='accepted') return {status:'internal-test-requires-reconciliation',sent:0};
     const history=await emailHistory(api,{contactId:process.env.GHL_PROBE_CONTACT_ID});
-    const sent=history.find(m=>[m.id,m.altId,...(m.meta?.email?.email?.messageIds || [])].some(id=>id && [attempt.message_id,attempt.email_message_id].includes(id)));
-    const replies=history.filter(m=>m.direction==='inbound' && new Date(m.dateAdded)>=new Date(attempt.created_at) && /Ready\s+cloud-internal-test-v1/i.test(m.body || ''));
+    const sentSummary=history.find(m=>[m.id,m.altId,...(m.meta?.email?.email?.messageIds || [])].some(id=>id && [attempt.message_id,attempt.email_message_id].includes(id)));
+    const sent=sentSummary?await emailDetail(api,sentSummary,process.env.GHL_LOCATION_ID):null;
+    const replies=history.filter(m=>m.direction==='inbound' && m.contactId===process.env.GHL_PROBE_CONTACT_ID
+      && new Date(m.dateAdded)>=new Date(attempt.created_at) && isReadinessReply(m.body));
     const stopped=suppressionReason({},replies)==='reply-received';
+    const senderVerified=Boolean(sent?.emailFrom?.includes('Steven Nisbet') && sent.emailFrom.includes(process.env.GHL_EMAIL_FROM));
+    if(sent && !senderVerified) throw new Error('Internal sender identity mismatch');
     const status=stopped?'delivered-and-reply-verified':sent?.status==='delivered' || sent?.status==='opened' || sent?.status==='read'?'delivered-awaiting-reply':'accepted-awaiting-delivery';
     await db.query('UPDATE prospecting_readiness SET status=$2,detail=detail || $3::jsonb,updated_at=now() WHERE test_key=$1',
-      [key,status,JSON.stringify({deliveryStatus:sent?.status || 'not-yet-observed',replyStopVerified:stopped})]);
-    return {status,contactWriteTested:true,emailValidationTested:true,replyStopVerified:stopped,sent:0};
+      [key,status,JSON.stringify({deliveryStatus:sent?.status || 'not-yet-observed',senderVerified,replyStopVerified:stopped})]);
+    return {status,contactWriteTested:true,emailValidationTested:true,senderVerified,replyStopVerified:stopped,sent:0};
   } finally { db.release(); await pool.end(); }
 }

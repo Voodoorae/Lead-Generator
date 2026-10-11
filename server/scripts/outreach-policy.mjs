@@ -1,6 +1,6 @@
 import { londonWindow } from './prospecting-policy.mjs';
 export const emailKey = value => String(value || '').trim().toLowerCase();
-export const companyKey = value => String(value || '').toLowerCase().replace(/\blimited\b/g,'ltd').replace(/\blimited liability partnership\b/g,'llp').replace(/[^a-z0-9]/g,'');
+export const companyKey = value => String(value || '').toLowerCase().replace(/\blimited liability partnership\b/g,'llp').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
 export function domainKey(value) {
   try { return new URL(/^[a-z]+:\/\//i.test(value) ? value : 'https://' + value).hostname.toLowerCase().replace(/^www\./,''); }
   catch { return ''; }
@@ -71,18 +71,25 @@ export function sendHold(candidate, now = new Date()) {
   if (!verifiedEmail(candidate.validation,candidate.email)) return 'email-not-verified';
   return null;
 }
+export function isReadinessReply(body) {
+  const current=String(body || '').split(/<blockquote|<div\b[^>]*(?:gmail_quote|yahoo_quoted)|\n(?:On .*wrote:|From:|[- ]*Original Message)/i)[0];
+  const text=current.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').trim();
+  return /^Ready\s+cloud-internal-test-v1\b/i.test(text);
+}
 const clean = value => String(value).replace(/[\r\n\u0000-\u001f]/g,' ').replace(/\u2014/g,',').slice(0,250);
 export function compose(candidate, stage = 0) {
   if (!['visibility','security'].includes(candidate.route)) throw new Error('Route requires reviewed copy');
   if (!Number.isInteger(stage) || stage < 0 || stage > 2) throw new Error('Invalid sequence stage');
   const company = clean(candidate.company), observation = clean(candidate.evidence.observation);
+  const source=new URL(candidate.evidence.sourceUrl);
+  if(source.protocol!=='https:' || domainKey(source.href)!==candidate.domain) throw new Error('Copy evidence URL mismatch');
   const subject = stage === 0 ? 'A website observation for ' + company : 'Re: A website observation for ' + company;
   const opening = stage === 0 ? 'Hello,\n\nI was looking at ' + company + '’s website and noticed this: ' + observation + '.'
     : stage === 1 ? 'Hello,\n\nA quick follow-up on the website observation I sent for ' + company + ': ' + observation + '.'
     : 'Hello,\n\nI’m closing the loop on my note about ' + company + '’s website: ' + observation + '.';
-  const why = candidate.route === 'visibility' ? 'If useful, I can show you what I checked and suggest a suitable description.'
+  const why = candidate.route === 'visibility' ? 'If useful, I can show you what I checked and explain how we could improve this detail.'
     : 'I can show you the public website detail I checked and explain what a practical fix would involve.';
-  const text = opening + '\n\n' + why + '\n\nWould you like me to send a short explanation and the next step?'
+  const text = opening + '\n\nPage checked: ' + source.href + '\n\n' + why + '\n\nWould you like me to send a short explanation and the next step?'
     + '\n\nSteven Nisbet\nProxaim\nhttps://proxaim.com\n\nIf this is not useful, reply “no thanks” and I’ll stop contacting you.';
   const escape = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   return {subject,message:text,html:'<div>' + escape(text).replace(/\n/g,'<br>') + '</div>'};

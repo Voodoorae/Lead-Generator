@@ -26,7 +26,7 @@ export async function readPublicPage(input, expectedDomain = domainKey(input), r
       const chunks = []; let bytes=0;
       response.on('data',chunk=> { bytes+=chunk.length; if (bytes>750000) request.destroy(new Error('Website response too large')); else chunks.push(chunk); });
       response.on('error',()=>reject(new Error('Website response interrupted')));
-      response.on('end',()=>resolve({html:Buffer.concat(chunks).toString('utf8'),url:url.href}));
+      response.on('end',()=>resolve({html:Buffer.concat(chunks).toString('utf8'),url:url.href,headers:{csp:response.headers['content-security-policy'] || null}}));
     });
     request.setTimeout(15000,()=>request.destroy(new Error('Website request timeout')));
     const deadline=setTimeout(()=>request.destroy(new Error('Website request deadline')),20000);
@@ -40,27 +40,31 @@ export async function readPublicPage(input, expectedDomain = domainKey(input), r
   return result;
 }
 export const pageText = html => html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&(?:nbsp|amp|quot|apos);/g,' ').replace(/\s+/g,' ').trim();
-export function homepageObservation(html) {
+export function homepageObservation(html,headers) {
   if (!/<\/body\s*>/i.test(html)) return null;
   const source = html.replace(/<!--[\s\S]*?-->/g,'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
   const metas = source.match(/<meta\b[^>]*>/gi) || [];
   const description = metas.some(tag => /\bname\s*=\s*(?:"description"|'description'|description(?:\s|\/?>))/i.test(tag)
     && /\bcontent\s*=\s*(?:"\s*[^"\s][^"]*"|'\s*[^'\s][^']*'|[^\s"'=<>`]+)/i.test(tag));
-  return description ? null : {route:'visibility',observation:'I could not find a non-empty description meta tag in the homepage HTML returned when I checked'};
+  if(!description) return {route:'visibility',observation:'I could not find a non-empty description meta tag in the page HTML returned when I checked'};
+  const ogImage=metas.some(tag=>/\bproperty\s*=\s*["']og:image["']/i.test(tag) && /\bcontent\s*=\s*["'][^"'\s]/i.test(tag));
+  if(!ogImage) return {route:'visibility',observation:'I could not find an Open Graph image tag in the page HTML returned when I checked'};
+  if(headers && headers.csp===null && !/http-equiv\s*=\s*["']content-security-policy["']/i.test(source)) return {route:'security',observation:'the page response I checked did not include a Content-Security-Policy header'};
+  return null;
 }
 export function registeredNumber(html) {
   const text = pageText(html);
-  const matches = [...text.matchAll(/(?:company\s+(?:registration\s+)?(?:number|no\.?|reg\.?\s*no\.?)|registered\s+in\s+scotland)[\s\S]{0,90}?\b(SC\d{6})\b/gi)].map(m=>m[1].toUpperCase());
+  const matches = [...text.matchAll(/(?:company\s+(?:registration\s+)?(?:number|no\.?|reg\.?\s*no\.?)|registered\s+in\s+scotland)[\s\S]{0,90}?\b((?:SC|SO)\d{6}|\d{8})\b/gi)].map(m=>m[1].toUpperCase());
   return [...new Set(matches)].length === 1 ? matches[0] : null;
 }
 export async function qualifyWebsite(score, company, {read = readPublicPage, now = new Date()} = {}) {
-  const domain = domainKey(score.website), email = emailKey(score.email);
-  const emailParts = email.split('@');
-  if (!domain || emailParts.length !== 2 || domainKey(emailParts[1]) !== domain) return {hold:'missing-business-domain-email'};
-  if (!/^(info|hello|office|enquiries|inquiries|contact)$/.test(emailParts[0])) return {hold:'requires-review-of-named-or-specialist-address'};
+  const domain = domainKey(score.website);
+  if (!domain) return {hold:'missing-business-website'};
+  if (!/\b(?:Glasgow|Edinburgh|Aberdeen|Dundee|Inverness|Stirling|Perth|Scotland)\b/i.test(score.address || '')
+      && !/\b(?:AB|DD|DG|EH|FK|G|HS|IV|KA|KW|KY|ML|PA|PH|ZE)\d{1,2}\s*\d[A-Z]{2}\b/i.test(score.address || '')) return {hold:'scottish-business-address-unverified'};
   const homeUrl = new URL(score.website); homeUrl.protocol='https:'; homeUrl.hash='';
   const home = await read(homeUrl.href,domain);
-  const observation = homepageObservation(home.html);
+  const observation = homepageObservation(home.html,home.headers);
   if (!observation) return {hold:'no-approved-evidenced-route'};
   const pages = [home];
   const links = [...home.html.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(h=>/contact|privacy|legal|terms/i.test(h));
@@ -72,6 +76,14 @@ export async function qualifyWebsite(score, company, {read = readPublicPage, now
     visited.add(url.href);
     try { pages.push(await read(url.href,domain)); } catch { /* Missing supplementary evidence holds below. */ }
   }
+  // The scanner may select a named address or miss a generic one. Discover an
+  // actually published generic mailbox from the checked pages instead of inventing it.
+  const published=pages.flatMap(p=>(p.html.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map(emailKey));
+  const emails=[...new Set(published)].filter(e=>{
+    const parts=e.split('@');return parts.length===2 && domainKey(parts[1])===domain && /^(info|hello|office|enquiries|inquiries|contact)$/.test(parts[0]);
+  });
+  const email=emails.includes(emailKey(score.email))?emailKey(score.email):emails[0];
+  if(!email) return {hold:'no-published-generic-business-email'};
   const emailPage = pages.find(p=>p.html.toLowerCase().includes(email));
   if (!emailPage) return {hold:'email-not-published-on-business-site'};
   const numbered = pages.map(p=>({page:p,number:registeredNumber(p.html)})).filter(p=>p.number);
@@ -83,7 +95,7 @@ export async function qualifyWebsite(score, company, {read = readPublicPage, now
   const title = (registry.html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').split(/\s+overview\s*/i)[0].trim();
   if (!title || !/\bCompany status\s+Active\b/i.test(text) || !text.includes(numbers[0])) return {hold:'active-company-unverified'};
   if (!pages.some(p=>companyKey(pageText(p.html)).includes(companyKey(title)))) return {hold:'registered-company-website-match-unverified'};
-  return {candidate:{company,domain,email,website:home.url,route:observation.route,
+  return {candidate:{company,domain,email,address:score.address,website:home.url,route:observation.route,
     corporate:{verified:true,companyNumber:numbers[0],legalName:title,sourceUrl:registry.url,websiteSourceUrl:numbered[0].page.url},
     emailPublished:true,emailSourceUrl:emailPage.url,
     evidence:{observation:observation.observation,sourceUrl:home.url,checkedAt:now.toISOString(),sha256:createHash('sha256').update(home.html).digest('hex')},

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {duplicate,suppressionReason,verifiedEmail,remainingCapacity,outboundCount,addWeekdays,sendHold,compose,campaignLimit} from './outreach-policy.mjs';
-import {apiClient,allContacts,emailHistory} from './outreach-api.mjs';
+import {duplicate,suppressionReason,verifiedEmail,remainingCapacity,outboundCount,addWeekdays,sendHold,compose,campaignLimit,isReadinessReply} from './outreach-policy.mjs';
+import {apiClient,allContacts,emailHistory,emailDetail} from './outreach-api.mjs';
 import {homepageObservation,registeredNumber,publicAddress,qualifyWebsite} from './website-evidence.mjs';
 import {submitOnce} from './outreach-store.mjs';
 test('duplicate company with no email and same domain with another mailbox both block',()=>{
@@ -79,6 +79,20 @@ test('CRM pagination uses last contact cursor and refuses incomplete lists',asyn
   await assert.rejects(allContacts(async()=>({total:2,contacts:[{id:'1'}]})),/incomplete/);
   await assert.rejects(emailHistory(async()=>({messages:[{id:'1'}],total:2})),/incomplete/);
 });
+test('email details override stale summary status and reject the wrong account',async()=>{
+  const summary={id:'testMessage',contactId:'testContact',direction:'outbound',status:'sent'};
+  const api=async()=>({emailMessage:{...summary,locationId:'testLocation',status:'delivered',from:'Sender'}});
+  assert.equal((await emailDetail(api,summary,'testLocation')).status,'delivered');
+  await assert.rejects(emailDetail(api,summary,'wrong'),/mismatch/);
+});
+test('read-only throttling retries, sends and paid verification do not',async()=>{
+  let calls=0;let waited=0;
+  const fetchImpl=async()=>++calls===1?{ok:false,status:429,headers:{get:()=> '1'}}:{ok:true,json:async()=>({})};
+  const api=apiClient({token:'private',locationId:'test',fetchImpl,sleep:async ms=>{waited=ms;}});
+  await api('GET','/contacts/test');assert.equal(calls,2);assert.equal(waited,1000);
+  calls=0;await assert.rejects(api('POST','/conversations/messages',{body:{}}),/HTTP 429/);assert.equal(calls,1);
+  calls=0;await assert.rejects(api('POST','/email/verify',{body:{}}),/HTTP 429/);assert.equal(calls,1);
+});
 test('private, loopback, metadata and mapped addresses are blocked',()=>{
   for(const ip of ['127.0.0.1','10.0.0.1','169.254.169.254','100.64.0.1','192.168.1.1','::1','::ffff:127.0.0.1','fc00::1','fe80::1','2001:db8::1']) assert.equal(publicAddress(ip),false,ip);
   assert.equal(publicAddress('8.8.8.8'),true);
@@ -86,7 +100,7 @@ test('private, loopback, metadata and mapped addresses are blocked',()=>{
 });
 test('description finding is bounded to complete HTML and excludes comments and script content',()=>{
   assert.equal(homepageObservation('<html>truncated'),null);
-  assert.equal(homepageObservation('<meta content="Useful description" name="description"></body>'),null);
+  assert.equal(homepageObservation('<meta content="Useful description" name="description"><meta property="og:image" content="https://example.com/image.png"></body>'),null);
   assert.ok(homepageObservation('<body><!-- <meta name="description" content="fake"> --></body>'));
   assert.ok(homepageObservation('<body><script>"<meta name=description content=fake>"</script></body>'));
   assert.equal(registeredNumber('<p>Charity number SC123456</p>'),null);
@@ -96,18 +110,31 @@ test('corporate, published email and active registry must all match',async()=>{
   const html='<html><body>Example Limited. Company number SC123456. Contact info@example.com.</body></html>';
   const registry='<title>EXAMPLE LIMITED overview - Find and update company information</title><body>Company number SC123456 Company status Active</body>';
   const read=async url=>({url,html:url.includes('service.gov.uk')?registry:html});
-  const result=await qualifyWebsite({website:'https://example.com',email:'info@example.com'},'Example Ltd',{read});
+  const result=await qualifyWebsite({website:'https://example.com',email:'info@example.com',address:'Stirling FK8 2AA'},'Example Ltd',{read});
   assert.equal(result.candidate.corporate.verified,true);
   assert.equal(result.candidate.route,'visibility');
-  assert.equal((await qualifyWebsite({website:'https://example.com',email:'person@example.com'},'Example',{read})).hold,'requires-review-of-named-or-specialist-address');
+  assert.equal((await qualifyWebsite({website:'https://example.com',email:'person@example.com',address:'Stirling'},'Example',{read})).candidate.email,'info@example.com');
   const wrong=async url=>({url,html:url.includes('service.gov.uk')?registry.replace('EXAMPLE LIMITED','UNRELATED LIMITED'):html});
-  assert.equal((await qualifyWebsite({website:'https://example.com',email:'info@example.com'},'Example',{read:wrong})).hold,'registered-company-website-match-unverified');
+  assert.equal((await qualifyWebsite({website:'https://example.com',email:'info@example.com',address:'Stirling FK8 2AA'},'Example',{read:wrong})).hold,'registered-company-website-match-unverified');
+  assert.equal((await qualifyWebsite({website:'https://example.com',email:'info@example.com',address:'London'},'Example',{read})).hold,'scottish-business-address-unverified');
+});
+test('missing OG image and CSP use actual HTML and observed headers only',()=>{
+  const html='<meta name="description" content="Useful description"><meta property="og:image" content="https://example.com/image.png"></body>';
+  assert.equal(homepageObservation(html),null);
+  assert.equal(homepageObservation(html,{csp:null}).route,'security');
+  assert.equal(homepageObservation(html,{csp:"default-src 'self'"}),null);
+  assert.equal(homepageObservation(html.replace(/<meta property="og:image"[^>]*>/,''),{csp:null}).route,'visibility');
 });
 test('copy cannot turn scanner scores into vulnerability or AI claims',()=>{
-  const c={company:'Example <script>\r\nInjection',route:'visibility',evidence:{observation:'A checked detail'}};
+  const c={company:'Example <script>\r\nInjection',domain:'example.com',route:'visibility',evidence:{observation:'A checked detail',sourceUrl:'https://example.com/checked-page'}};
   const copy=compose(c);assert.ok(!copy.subject.includes('\n'));assert.ok(!copy.html.includes('<script>'));
   assert.ok(copy.message.includes('reply “no thanks”'));assert.ok(!/AI invisible|vulnerable|GDPR exposure/.test(copy.message));
   assert.throws(()=>compose({...c,route:'eu-ai-act'}),/reviewed copy/);
+});
+test('quoted test instructions cannot masquerade as a human readiness reply',()=>{
+  assert.equal(isReadinessReply('<p>Ready cloud-internal-test-v1</p>'),true);
+  assert.equal(isReadinessReply('No thanks\n<blockquote>Ready cloud-internal-test-v1</blockquote>'),false);
+  assert.equal(isReadinessReply('Out of office\nOn Sunday someone wrote: Ready cloud-internal-test-v1'),false);
 });
 test('missing or stale qualification cannot pass a send gate',()=>{
   assert.equal(sendHold({}),'corporate-status-unverified');

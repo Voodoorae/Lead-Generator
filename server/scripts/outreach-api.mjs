@@ -1,6 +1,6 @@
 const BASE = 'https://services.leadconnectorhq.com';
 const idPattern = /^[A-Za-z0-9_-]+$/;
-export function apiClient({ token, locationId, fetchImpl = fetch }) {
+export function apiClient({ token, locationId, fetchImpl = fetch, sleep = ms=>new Promise(r=>setTimeout(r,ms)) }) {
   if (!token || /[\r\n]/.test(token) || !idPattern.test(locationId || '')) throw new Error('CRM configuration invalid');
   return async (method, path, { query = {}, body, version = '2021-07-28' } = {}) => {
     const contactRead = /^\/contacts\/[A-Za-z0-9_-]+$/.test(path);
@@ -15,17 +15,33 @@ export function apiClient({ token, locationId, fetchImpl = fetch }) {
     // use the query/token scope and reject undeclared body fields with HTTP 422.
     const scopedBody = body === undefined ? undefined : ['/contacts/','/contacts/search'].includes(path) ? { ...body, locationId } : body;
     let response;
-    try {
-      response = await fetchImpl(url, { method, redirect:'error', signal:AbortSignal.timeout(25000),
-        headers:{ Authorization:'Bearer ' + token, Version:version, Accept:'application/json', 'Content-Type':'application/json' },
-        ...(scopedBody && {body:JSON.stringify(scopedBody)}) });
-    } catch { throw new Error('CRM request network or timeout failure'); }
+    const retryable=method==='GET' || path==='/contacts/search';
+    for(let attempt=0;attempt<5;attempt++) {
+      try {
+        response = await fetchImpl(url, { method, redirect:'error', signal:AbortSignal.timeout(25000),
+          headers:{ Authorization:'Bearer ' + token, Version:version, Accept:'application/json', 'Content-Type':'application/json' },
+          ...(scopedBody && {body:JSON.stringify(scopedBody)}) });
+      } catch { throw new Error('CRM request network or timeout failure'); }
+      if(response.ok || !retryable || ![429,503].includes(response.status) || attempt===4) break;
+      const wait=retryDelay(response.headers?.get('retry-after'),attempt);
+      await response.body?.cancel();await sleep(wait);
+    }
     if (!response.ok) {
       const operation=path==='/email/verify'?'email-verification':path==='/conversations/messages'?'email-send':tagsWrite?'contact-tag-write':contactRead?'contact-read':path==='/contacts/'?'contact-create':path==='/contacts/search'?'contact-search':'email-history-read';
       throw new Error('CRM ' + operation + ' HTTP ' + response.status);
     }
-    try { return await response.json(); } catch { throw new Error('CRM response invalid JSON'); }
+    let data;try { data=await response.json(); } catch { throw new Error('CRM response invalid JSON'); }
+    for(const records of [data.contacts,data.messages]) if(Array.isArray(records) && records.some(r=>r.locationId!==locationId)) throw new Error('CRM collection account mismatch');
+    return data;
   };
+}
+export async function emailDetail(api,message,locationId) {
+  const data=await api('GET','/conversations/messages/email/'+message.id);
+  // The actual API returns emailMessage, despite the public projection describing
+  // a flat object. Accept both shapes and validate account/contact before use.
+  const email=data.emailMessage || data;
+  if(email.locationId!==locationId || email.contactId!==message.contactId || !email.status || email.direction!==message.direction) throw new Error('Email detail account or message mismatch');
+  return {...message,status:email.status,emailFrom:email.from};
 }
 export async function allContacts(api) {
   const contacts = [], seen = new Set();
@@ -63,3 +79,4 @@ export async function emailHistory(api, query) {
   }
   throw new Error('CRM history pagination limit exceeded');
 }
+import { retryDelay } from './lead-api.mjs';
