@@ -43,13 +43,15 @@ export const pageText = html => html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/
 export function homepageObservation(html,headers) {
   if (!/<\/body\s*>/i.test(html)) return null;
   const source = html.replace(/<!--[\s\S]*?-->/g,'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
-  const metas = source.match(/<meta\b[^>]*>/gi) || [];
-  const description = metas.some(tag => /\bname\s*=\s*(?:"description"|'description'|description(?:\s|\/?>))/i.test(tag)
-    && /\bcontent\s*=\s*(?:"\s*[^"\s][^"]*"|'\s*[^'\s][^']*'|[^\s"'=<>`]+)/i.test(tag));
-  if(!description) return {route:'visibility',observation:'I could not find a non-empty description meta tag in the page HTML returned when I checked'};
-  const ogImage=metas.some(tag=>/\bproperty\s*=\s*["']og:image["']/i.test(tag) && /\bcontent\s*=\s*["'][^"'\s]/i.test(tag));
-  if(!ogImage) return {route:'visibility',observation:'I could not find an Open Graph image tag in the page HTML returned when I checked'};
-  if(headers && headers.csp===null && !/http-equiv\s*=\s*["']content-security-policy["']/i.test(source)) return {route:'security',observation:'the page response I checked did not include a Content-Security-Policy header'};
+  const metas=(source.match(/<meta\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi) || []).map(tag=>{
+    const attrs={};for(const m of tag.matchAll(/([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/g)) attrs[m[1].toLowerCase()]=(m[2] ?? m[3] ?? m[4]).trim();
+    return attrs;
+  });
+  const description=metas.some(a=>a.name?.toLowerCase()==='description' && a.content);
+  if(!description) return {route:'visibility',observation:'the short description field (meta description) was empty or missing in the page HTML I checked'};
+  const ogImage=metas.some(a=>['og:image','og:image:url','og:image:secure_url'].includes((a.property || a.name || '').toLowerCase()) && a.content);
+  if(!ogImage) return {route:'visibility',observation:'I could not find an image specified for link previews (an Open Graph image tag) in the page HTML I checked'};
+  if(headers && headers.csp===null && !metas.some(a=>a['http-equiv']?.toLowerCase()==='content-security-policy')) return {route:'security',observation:'the page response I checked did not include a Content-Security-Policy header'};
   return null;
 }
 export function registeredNumber(html) {

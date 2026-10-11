@@ -125,6 +125,10 @@ test('missing OG image and CSP use actual HTML and observed headers only',()=>{
   assert.equal(homepageObservation(html,{csp:"default-src 'self'"}),null);
   assert.equal(homepageObservation(html.replace(/<meta property="og:image"[^>]*>/,''),{csp:null}).route,'visibility');
 });
+test('valid unquoted metadata and image URL aliases cannot become false missing-tag claims',()=>{
+  const html='<meta name=description content="Useful > description"><meta property=og:image:url content=https://example.com/image.png><meta http-equiv=content-security-policy content="default-src self"></body>';
+  assert.equal(homepageObservation(html,{csp:null}),null);
+});
 test('copy cannot turn scanner scores into vulnerability or AI claims',()=>{
   const c={company:'Example <script>\r\nInjection',domain:'example.com',route:'visibility',evidence:{observation:'A checked detail',sourceUrl:'https://example.com/checked-page'}};
   const copy=compose(c);assert.ok(!copy.subject.includes('\n'));assert.ok(!copy.html.includes('<script>'));
