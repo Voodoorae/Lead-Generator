@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {duplicate,suppressionReason,verifiedEmail,remainingCapacity,outboundCount,addWeekdays,sendHold,compose,campaignLimit,isReadinessReply} from './outreach-policy.mjs';
 import {apiClient,allContacts,emailHistory,emailDetail} from './outreach-api.mjs';
-import {homepageObservation,registeredNumber,publicAddress,qualifyWebsite} from './website-evidence.mjs';
+import {homepageObservation,registeredNumber,publicAddress,qualifyWebsite,publishedBusinessEmails} from './website-evidence.mjs';
 import {submitOnce} from './outreach-store.mjs';
 test('duplicate company with no email and same domain with another mailbox both block',()=>{
   const c={company:'Example Limited',website:'https://www.example.com',email:'info@example.com'};
@@ -146,3 +146,23 @@ test('missing or stale qualification cannot pass a send gate',()=>{
     evidence:{sourceUrl:'https://example.com',observation:'Checked detail',checkedAt:'2026-10-01T00:00:00Z'},validation:{result:'deliverable',risk:'low',address:'info@example.com'}};
   assert.equal(sendHold(c,new Date('2026-10-11T00:00:00Z')),'stale-evidence');
 });
+test('published shared and named business addresses pass, without guessed or non-contact mailboxes',()=>{
+  const html='<p>mail@example.com studio@example.com enquiry@example.com design@example.com Chris&#64;example.com privacy@example.com noreply@example.com other@elsewhere.test</p><script>fake@example.com</script><!-- hidden@example.com -->';
+  assert.deepEqual(publishedBusinessEmails(html,'example.com'),['mail@example.com','studio@example.com','enquiry@example.com','design@example.com','chris@example.com']);
+});
+test('an independently matched active company does not need to print its number on its site',async()=>{
+  const home='<html><body>Example Architects. Stirling FK8 2AA. Chris@example.com.</body></html>';
+  const search='<a href="/company/SC123456">EXAMPLE ARCHITECTS LIMITED</a><a href="/company/SC999999">OTHER LIMITED</a>';
+  const registry='<title>EXAMPLE ARCHITECTS LIMITED overview</title><body>Company number SC123456 Registered office address Stirling FK8 2AA Company status Active</body>';
+  const read=async url=>({url,html:url.includes('/search/companies')?search:url.includes('/company/')?registry:home});
+  const score={website:'https://example.com',address:'Stirling FK8 2AA'};
+  const q=await qualifyWebsite(score,'Example Architects Ltd',{read});
+  assert.equal(q.candidate.email,'chris@example.com');
+  assert.equal(q.candidate.corporate.verificationMethod,'registry-name-and-address');
+  const wrong=async url=>({url,html:url.includes('/search/companies')?search:url.includes('/company/')?registry.replace('Stirling FK8 2AA','Glasgow G1 1AA'):home});
+  assert.equal((await qualifyWebsite(score,'Example Architects Ltd',{read:wrong})).hold,'registered-company-website-match-unverified');
+});
+test('an access challenge cannot become a missing-description or security claim',()=>{
+  assert.equal(homepageObservation('<title>Just a moment...</title><body>Checking your browser</body>',{csp:null}),null);
+});
+

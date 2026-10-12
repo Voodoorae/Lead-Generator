@@ -42,6 +42,7 @@ export async function readPublicPage(input, expectedDomain = domainKey(input), r
 export const pageText = html => html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&(?:nbsp|amp|quot|apos);/g,' ').replace(/\s+/g,' ').trim();
 export function homepageObservation(html,headers) {
   if (!/<\/body\s*>/i.test(html)) return null;
+  if (/<title[^>]*>\s*(?:Just a moment|Attention Required|Access Denied|Robot Check)\b/i.test(html)) return null;
   const source = html.replace(/<!--[\s\S]*?-->/g,'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
   const metas=(source.match(/<meta\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi) || []).map(tag=>{
     const attrs={};for(const m of tag.matchAll(/([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/g)) attrs[m[1].toLowerCase()]=(m[2] ?? m[3] ?? m[4]).trim();
@@ -59,6 +60,17 @@ export function registeredNumber(html) {
   const matches = [...text.matchAll(/(?:company\s+(?:registration\s+)?(?:number|no\.?|reg\.?\s*no\.?)|registered\s+in\s+scotland)[\s\S]{0,90}?\b((?:SC|SO)\d{6}|\d{8})\b/gi)].map(m=>m[1].toUpperCase());
   return [...new Set(matches)].length === 1 ? matches[0] : null;
 }
+export function publishedBusinessEmails(html,domain) {
+  const source=html.replace(/<!--[\s\S]*?-->/g,'').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi,'')
+    .replace(/&#(?:x([0-9a-f]+)|(\d+));/gi,(_m,hex,decimal)=>String.fromCodePoint(Math.min(0x10ffff,parseInt(hex || decimal,hex?16:10))))
+    .replace(/&commat;/gi,'@').replace(/&(?:period|dot);/gi,'.');
+  return [...new Set((source.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)||[]).map(emailKey))].filter(email=>{
+    const [local,host]=email.split('@');
+    return domainKey(host)===domain && !/^(?:no[-_.]?reply|do[-_.]?not[-_.]?reply|bounces?|abuse|privacy|gdpr|dpo)(?:$|[+._-])/i.test(local);
+  });
+}
+const businessNameKey=value=>companyKey(value).replace(/(?:ltd|llp)$/,'');
+const postcodeKey=value=>String(value||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)?.[0].replace(/\s/g,'');
 export async function qualifyWebsite(score, company, {read = readPublicPage, now = new Date()} = {}) {
   const domain = domainKey(score.website);
   if (!domain) return {hold:'missing-business-website'};
@@ -78,28 +90,40 @@ export async function qualifyWebsite(score, company, {read = readPublicPage, now
     visited.add(url.href);
     try { pages.push(await read(url.href,domain)); } catch { /* Missing supplementary evidence holds below. */ }
   }
-  // The scanner may select a named address or miss a generic one. Discover an
-  // actually published generic mailbox from the checked pages instead of inventing it.
-  const published=pages.flatMap(p=>(p.html.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map(emailKey));
-  const emails=[...new Set(published)].filter(e=>{
-    const parts=e.split('@');return parts.length===2 && domainKey(parts[1])===domain && /^(info|hello|office|enquiries|inquiries|contact)$/.test(parts[0]);
-  });
-  const email=emails.includes(emailKey(score.email))?emailKey(score.email):emails[0];
-  if(!email) return {hold:'no-published-generic-business-email'};
-  const emailPage = pages.find(p=>p.html.toLowerCase().includes(email));
+  // Shared and named work mailboxes are both eligible when actually published.
+  const emails=[...new Set(pages.flatMap(p=>publishedBusinessEmails(p.html,domain)))];
+  const preferred=emails.find(e=>/^(?:info|hello|office|enquir(?:y|ies)|inquir(?:y|ies)|contact|mail|studio|design|admin|reception|team|support)@/.test(e));
+  const email=preferred || (emails.includes(emailKey(score.email))?emailKey(score.email):emails[0]);
+  if(!email) return {hold:'published-business-email-not-found'};
+  const emailPage = pages.find(p=>publishedBusinessEmails(p.html,domain).includes(email));
   if (!emailPage) return {hold:'email-not-published-on-business-site'};
   const numbered = pages.map(p=>({page:p,number:registeredNumber(p.html)})).filter(p=>p.number);
   const numbers = [...new Set(numbered.map(n=>n.number))];
+  const independent=numbers.length===0;
+  if(independent) {
+    const searchUrl='https://find-and-update.company-information.service.gov.uk/search/companies?q='+encodeURIComponent(company);
+    const search=await read(searchUrl,'find-and-update.company-information.service.gov.uk');
+    const matches=[...search.html.matchAll(/<a\b[^>]*href=["']\/company\/((?:SC|SO)\d{6}|\d{8})["'][^>]*>([\s\S]*?)<\/a>/gi)]
+      .filter(m=>businessNameKey(pageText(m[2]))===businessNameKey(company)).map(m=>m[1]);
+    const unique=[...new Set(matches)];
+    if(unique.length!==1) return {hold:'corporate-registration-review-required'};
+    numbers.push(unique[0]);
+  }
   if (numbers.length!==1) return {hold:'corporate-registration-unverified'};
   const registryUrl = 'https://find-and-update.company-information.service.gov.uk/company/' + numbers[0];
   const registry = await read(registryUrl,'find-and-update.company-information.service.gov.uk');
   const text = pageText(registry.html);
   const title = (registry.html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').split(/\s+overview\s*/i)[0].trim();
   if (!title || !/\bCompany status\s+Active\b/i.test(text) || !text.includes(numbers[0])) return {hold:'active-company-unverified'};
-  if (!pages.some(p=>companyKey(pageText(p.html)).includes(companyKey(title)))) return {hold:'registered-company-website-match-unverified'};
+  const registeredOffice=text.match(/Registered office address\s+([\s\S]*?)\s+Company status/i)?.[1];
+  const postcode=postcodeKey(score.address);
+  const independentMatch=independent && businessNameKey(title)===businessNameKey(company) && postcode && postcodeKey(registeredOffice)===postcode
+    && pages.some(p=>companyKey(pageText(p.html)).includes(businessNameKey(company)));
+  if (independent ? !independentMatch : !pages.some(p=>companyKey(pageText(p.html)).includes(companyKey(title)))) return {hold:'registered-company-website-match-unverified'};
   return {candidate:{company,domain,email,address:score.address,website:home.url,route:observation.route,
-    corporate:{verified:true,companyNumber:numbers[0],legalName:title,sourceUrl:registry.url,websiteSourceUrl:numbered[0].page.url},
+    corporate:{verified:true,companyNumber:numbers[0],legalName:title,sourceUrl:registry.url,websiteSourceUrl:numbered[0]?.page.url || home.url,verificationMethod:independent?'registry-name-and-address':'website-registration-number'},
     emailPublished:true,emailSourceUrl:emailPage.url,
     evidence:{observation:observation.observation,sourceUrl:home.url,checkedAt:now.toISOString(),sha256:createHash('sha256').update(home.html).digest('hex')},
     validation:null}};
 }
+
