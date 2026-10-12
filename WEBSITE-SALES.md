@@ -77,3 +77,7 @@ The current scope and client input list are in STARTER-OFFER.md, with the operat
 ## Short email and expandable offer page
 
 Keep the introductory email to one personalised observation or verified-preview statement, the £299 one-page offer and one invitation to reply. Full scope, revisions, content requirements and delivery conditions belong on server/public/starter-offer.html, served at /website-offer after deployment. This page contains six native expandable details sections. Do not insert a page link into live emails until its public HTTPS URL has been deployed and verified. It has been visually checked locally at 1440px and 390px, with zero mobile horizontal overflow and working expansion. No public page deployment or emails occurred during this update.
+
+## Offer presentation approved
+
+On 12 October 2026, Rachael approved the shortened introductory email and separate expandable offer page. Use this presentation for the standalone £299 offer. Approval does not establish hosting compatibility, a proven delivery turnaround, individual quote terms or a live page URL. The separate public-repository source-publishing approval remains pending; no cloud resources or email sending were activated by this approval.
