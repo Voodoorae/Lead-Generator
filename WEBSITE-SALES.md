@@ -61,3 +61,7 @@ Configure WEBSITE_ALERT_EMAIL and WEBSITE_ALERT_CONTACT_ID for the verified exis
 A permanent reply identity prevents duplicate processing. Alert reservations occur before the provider call. Uncertain sends are never retried automatically and require reconciliation. Provider acceptance is not proof of delivery. Internal alerts consume shared email capacity and can be held when capacity or prerequisites cannot be verified. Reserved and uncertain alerts are shown in the private dashboard and require review.
 
 The cloud worker and dashboard preserve the separate campaign and stop duplicate introductions. Do not enable the local and cloud senders together. Cloud cutover and the pending approval for publishing source are still required.
+
+## Decisions confirmed on 12 October 2026
+
+Rachael approved alerts to her verified Proxaim mailbox, calls arranged by email reply, one automatic acknowledgement of explicit interest inviting a call, and quotes drafted for her review. No cold chase emails, negotiation, prices, calendar commitments or automatic quotes are authorised. Set WEBSITE_ACKNOWLEDGEMENTS_ENABLED only after live cloud readiness. The implementation reserves one acknowledgement per business, refreshes the latest reply and suppression, skips conversations already answered by a human or another campaign, and holds uncertain sends permanently for reconciliation. Shared capacity includes introductions, acknowledgements and internal alerts. PRICING-PROPOSAL.md is a recommendation awaiting approval, not a rate card.

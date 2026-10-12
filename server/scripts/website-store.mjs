@@ -17,7 +17,8 @@ export async function reserveWebsite(db,{id,prospectId,date,observedForeign,fore
     if((await db.query('SELECT 1 FROM website_attempts WHERE id=$1 OR prospect_id=$2',[id,prospectId])).rowCount) {await db.query('ROLLBACK');return false;}
     const count=(await db.query('SELECT count(*)::integer n FROM website_attempts WHERE run_date=$1',[date])).rows[0].n;
     const alerts=(await db.query("SELECT count(*)::integer n FROM website_alerts WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')",[date])).rows[0].n;
-    if(count>=WEBSITE_LIMIT||count+alerts+Math.max(foreignReserve,observedForeign)>=SHARED_LIMIT) {await db.query('ROLLBACK');return false;}
+    const acknowledgements=(await db.query("SELECT count(*)::integer n FROM website_acknowledgements WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')",[date])).rows[0].n;
+    if(count>=WEBSITE_LIMIT||count+alerts+acknowledgements+Math.max(foreignReserve,observedForeign)>=SHARED_LIMIT) {await db.query('ROLLBACK');return false;}
     await db.query("INSERT INTO website_attempts(id,prospect_id,run_date,status,message) VALUES($1,$2,$3,'reserved',$4)",[id,prospectId,date,JSON.stringify(message)]);
     await db.query('COMMIT');return true;
   } catch(error) {await db.query('ROLLBACK');throw error;}
@@ -34,7 +35,7 @@ export async function retireWebsite(db,id,outcome) {
   if(!['won','lost','opted_out','disqualified','closed','closed_no_reply'].includes(outcome)) throw Error('Concluded outcome required');
   await db.query('BEGIN');
   try {
-    const pending=await db.query("SELECT 1 FROM website_attempts WHERE prospect_id=$1 AND status IN ('reserved','uncertain')",[id]);
+    const pending=await db.query("SELECT 1 FROM website_attempts WHERE prospect_id=$1 AND status IN ('reserved','uncertain') UNION ALL SELECT 1 FROM website_acknowledgements WHERE prospect_id=$1 AND status IN ('reserved','uncertain')",[id]);
     if(pending.rowCount) throw Error('Unresolved send prevents retirement');
     const row=await db.query('SELECT status,outcome FROM website_prospects WHERE id=$1 FOR UPDATE',[id]);
     if(!row.rowCount) throw Error('Unknown prospect');

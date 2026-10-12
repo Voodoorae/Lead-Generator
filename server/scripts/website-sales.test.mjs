@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classifyReply,salesDraft,recordReply,submitAlert} from './website-sales.mjs';
+import {classifyReply,salesDraft,recordReply,submitAlert,interestAcknowledgement,submitAcknowledgement} from './website-sales.mjs';
 test('interest classification excludes negatives, automated replies and quoted interest',()=>{
   assert.equal(classifyReply('Yes please, send me the details'),'positive');
   assert.equal(classifyReply('How much would it cost?'),'positive');
@@ -37,4 +37,14 @@ test('a positive reply records the event, draft and single alert in one transact
   assert.equal(calls.filter(c=>c.sql.startsWith('INSERT INTO website_alerts')).length,1);
   assert.equal(calls.at(-1).sql,'COMMIT');
   assert(calls.find(c=>c.sql.startsWith('INSERT INTO website_sales')).params[3].includes('prepare a concept'));
+});
+test('automatic acknowledgement invites a reply without quoting, claiming a booking or preview',()=>{
+  const copy=interestAcknowledgement();
+  assert(copy.message.includes('reply with a suitable time'));
+  assert(!/£|guarantee|booked|preview|\u2014/.test(copy.message));
+});
+test('ambiguous acknowledgement is never automatically retried',async()=>{
+  let calls=0;const queries=[];
+  await assert.rejects(submitAcknowledgement({async query(sql){queries.push(sql);}},async()=>{calls++;throw Error('timeout');},'website-test',{}),/no automatic retry/);
+  assert.equal(calls,1);assert(queries.some(sql=>sql.includes("status='uncertain'")));
 });
