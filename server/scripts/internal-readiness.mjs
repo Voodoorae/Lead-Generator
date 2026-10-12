@@ -48,19 +48,20 @@ export async function internalReadiness({send=false,senderOnly=false}={}) {
     if (attempt.status!=='accepted') return {status:'internal-test-requires-reconciliation',sent:0};
     const history=await emailHistory(api,{contactId:process.env.GHL_PROBE_CONTACT_ID});
     const sentSummary=history.find(m=>[m.id,m.altId,...(m.meta?.email?.email?.messageIds || [])].some(id=>id && [attempt.message_id,attempt.email_message_id].includes(id)));
-    const sent=sentSummary?await emailDetail(api,sentSummary,process.env.GHL_LOCATION_ID):null;
+    const sent=await emailDetail(api,sentSummary || {id:attempt.email_message_id || attempt.message_id,contactId:process.env.GHL_PROBE_CONTACT_ID,direction:'outbound'},process.env.GHL_LOCATION_ID);
     const replies=history.filter(m=>m.direction==='inbound' && m.contactId===process.env.GHL_PROBE_CONTACT_ID
       && new Date(m.dateAdded)>=new Date(attempt.created_at) && isReadinessReply(m.body));
     const stopped=suppressionReason({},replies)==='reply-received';
-    // Changing the sender does not invalidate an already observed historical reply test.
-    const historicalSender=!senderOnly && prior?.status==='delivered-and-reply-verified' && prior.detail?.senderVerified===true && prior.detail?.replyStopVerified===true;
-    const senderVerified=Boolean(sent?.emailFrom?.includes('Steven Nisbet') && (historicalSender || sent.emailFrom.includes(prior?.detail?.requestedSender || process.env.GHL_EMAIL_FROM)));
+    // The original v1 test predates requestedSender storage and used Steven's old address.
+    const expectedSender=prior?.detail?.requestedSender || (senderOnly?process.env.GHL_EMAIL_FROM:'steve.nisbet@becomefoundbyai.com');
+    const senderVerified=Boolean(sent?.emailFrom?.includes('Steven Nisbet') && sent.emailFrom.includes(expectedSender));
     if(sent && !senderVerified) throw new Error('Internal sender identity mismatch');
     const delivered=['delivered','opened','read'].includes(sent?.status);
-    const status=senderOnly?delivered && senderVerified?'sender-verified':'accepted-awaiting-delivery':stopped?'delivered-and-reply-verified':delivered?'delivered-awaiting-reply':'accepted-awaiting-delivery';
+    const replyVerified=stopped || prior?.detail?.replyStopVerified===true;
+    const status=senderOnly?delivered && senderVerified?'sender-verified':'accepted-awaiting-delivery':replyVerified?'delivered-and-reply-verified':delivered?'delivered-awaiting-reply':'accepted-awaiting-delivery';
     await db.query('UPDATE prospecting_readiness SET status=$2,detail=detail || $3::jsonb,updated_at=now() WHERE test_key=$1',
-      [key,status,JSON.stringify({deliveryStatus:sent?.status || 'not-yet-observed',senderVerified,replyStopVerified:stopped})]);
-    return {status,contactWriteTested:true,emailValidationTested:true,senderVerified,replyStopVerified:stopped,sent:0};
+      [key,status,JSON.stringify({deliveryStatus:sent?.status || 'not-yet-observed',senderVerified,replyStopVerified:!senderOnly && replyVerified})]);
+    return {status,contactWriteTested:true,emailValidationTested:true,senderVerified,replyStopVerified:!senderOnly && replyVerified,sent:0};
   } finally { db.release(); await pool.end(); }
 }
 
