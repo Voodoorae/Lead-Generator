@@ -20,8 +20,10 @@ export async function postLeadJson(url, body, {
   fetchImpl = fetch,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
   log = message => console.log(JSON.stringify(message)),
+  maxAttempts = 5,
 } = {}) {
-  for (let attempt = 0; attempt < 5; attempt++) {
+  if(!Number.isInteger(maxAttempts)||maxAttempts<1||maxAttempts>5)throw Error('Invalid discovery attempt limit');
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await fetchImpl(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body), signal: AbortSignal.timeout(240_000),
@@ -36,7 +38,7 @@ export async function postLeadJson(url, body, {
         bodyMentionsRateLimit:/too many requests|rate.?limit/i.test(body),
         bodyMentionsStartup:/spin.?up|starting|waking|loading/i.test(body)});
     }
-    if (![429, 503].includes(response.status) || attempt === 4) {
+    if (![429, 503].includes(response.status) || attempt === maxAttempts-1) {
       if (!response.bodyUsed) await response.body?.cancel();
       throw new Error(`Lead Generator HTTP ${response.status}; collection stopped after ${attempt + 1} attempt(s)`);
     }

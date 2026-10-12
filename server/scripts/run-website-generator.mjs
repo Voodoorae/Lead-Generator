@@ -23,7 +23,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
   const enabled=process.env.WEBSITE_OUTREACH_ENABLED==='true';
   try {
     owns=(await db.query('SELECT pg_try_advisory_lock($1) acquired',[7101027])).rows[0].acquired;
-    if(!owns)return {status:'other-outreach-running',sent:0};
+    if(!owns){summary.status='other-outreach-running';return {status:summary.status,sent:0};}
     await ensureOutreach(db);await ensureWebsite(db);await ensureSales(db);
     // Private migration data is an environment setting, never committed to a public repo.
     if(process.env.WEBSITE_MIGRATION_SEED) {
@@ -36,7 +36,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
       }
     }
     const prior=(await db.query('SELECT status FROM website_runs WHERE run_date=$1',[window.date])).rows[0];
-    if(['complete','complete-with-holds'].includes(prior?.status)&&!readinessOnly&&!force)return {status:'already-completed',sent:0};
+    if(['complete','complete-with-holds'].includes(prior?.status)&&!readinessOnly&&!force){summary.status='already-completed';return {status:summary.status,sent:0};}
     await db.query(`INSERT INTO website_runs(run_date,status) VALUES($1,'running') ON CONFLICT(run_date) DO UPDATE SET status='running',updated_at=now()`,[window.date]);
     runStarted=true;
     if(!process.env.GHL_API_TOKEN||!process.env.GHL_LOCATION_ID)throw Error('CRM API credentials required');
@@ -89,24 +89,27 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     const leadApi=new URL(process.env.LEAD_GENERATOR_URL||'https://lead-generator-1-vx3v.onrender.com');
     if(leadApi.protocol!=='https:')throw Error('Discovery API must use HTTPS');
     // Resume imported/persisted research first. CRM identities stay immutable.
-    const queue=(await db.query("SELECT * FROM website_prospects WHERE status='held' ORDER BY updated_at LIMIT 30")).rows;
-    const candidates=queue.map(row=>({...row.qualification,id:row.id,sector:row.sector,company:row.qualification.company,website:row.qualification.website}));
-    for(const search of websiteSearches(window.date)) {
+    const queue=(await db.query("SELECT * FROM website_prospects WHERE status='held' ORDER BY CASE WHEN sector='accountants-existing-build-exception' THEN 0 ELSE 1 END,updated_at LIMIT 30")).rows;
+    async function* candidates() {
+      for(const row of queue)yield {...row.qualification,id:row.id,sector:row.sector,company:row.qualification.company,website:row.qualification.website};
+      for(const search of websiteSearches(window.date)) {
       try {
-        const result=await postLeadJson(new URL('/api/leads',leadApi),search);
+        const result=await postLeadJson(new URL('/api/leads',leadApi),search,{maxAttempts:2});
         if(!Array.isArray(result.leads))throw Error('Discovery response invalid');
         summary.found+=result.leads.length;
         for(const place of result.leads.slice(0,8)) {
           if(!place.placeId||!place.name)continue;
-          const raw=await postLeadJson(new URL('/api/score-lead',leadApi),{placeId:place.placeId,name:place.name,location:search.location});
+          const raw=await postLeadJson(new URL('/api/score-lead',leadApi),{placeId:place.placeId,name:place.name,location:search.location},{maxAttempts:2});
           if(raw.placeId!==place.placeId)throw Error('Discovery identity mismatch');
           if(!raw.website){summary.held++;continue;}
-          candidates.push({id:'website-'+createHash('sha256').update(domainKey(raw.website)).digest('hex').slice(0,24),company:place.name,website:raw.website,address:place.address,sector:search.niche,discoverySource:leadApi.href,valueRationale:'Inference from advertised property, installation or private practice service; no revenue estimate.'});
+          yield {id:'website-'+createHash('sha256').update(domainKey(raw.website)).digest('hex').slice(0,24),company:place.name,website:raw.website,address:place.address,sector:search.niche,discoverySource:leadApi.href,valueRationale:'Inference from advertised property, installation or private practice service; no revenue estimate.'};
         }
       }catch(error){summary.errors.push('discovery-read-failed');}
+      }
     }
-    const seen=new Set();
-    for(const input of candidates.slice(0,35)) {
+    const seen=new Set();let considered=0;
+    for await(const input of candidates()) {
+      if(considered++>=35)break;
       const domain=domainKey(input.website);if(!domain||seen.has(domain)){summary.skipped++;continue;}seen.add(domain);
       const existing=(await db.query('SELECT status FROM website_prospects WHERE domain=$1',[domain])).rows[0];
       if(existing&&existing.status!=='held'){summary.skipped++;continue;}

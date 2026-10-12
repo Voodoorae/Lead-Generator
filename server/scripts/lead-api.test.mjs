@@ -62,3 +62,12 @@ test('throttle diagnostics capture request IDs without exposing response content
   assert.doesNotMatch(JSON.stringify(logs),/sensitive@example.com|secret-value|<html>/);
 });
 
+test('website discovery can stop throttled requests after two attempts',async()=>{
+  let calls=0,waits=0;
+  await assert.rejects(postLeadJson(new URL('https://example.invalid/api/leads'),{}, {
+    maxAttempts:2,
+    fetchImpl:async()=>{calls++;return new Response('Too many requests',{status:429});},
+    sleep:async()=>{waits++;},log:()=>{}
+  }),/after 2 attempt/);
+  assert.equal(calls,2);assert.equal(waits,1);
+});
