@@ -84,6 +84,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     browser=await openWebsiteBrowser();
     await verifyPreview(browser,'<!doctype html><meta name="viewport" content="width=device-width"><a href="mailto:hello@proxaim.com">Synthetic browser readiness</a>','hello@proxaim.com');
     if(readinessOnly) {summary.status='readiness-checked';return summary;}
+    await browser.close();browser=null;
     const leadApi=new URL(process.env.LEAD_GENERATOR_URL||'https://lead-generator-1-vx3v.onrender.com');
     if(leadApi.protocol!=='https:')throw Error('Discovery API must use HTTPS');
     // Resume imported/persisted research first. CRM identities stay immutable.
@@ -112,7 +113,10 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
       try {
         if(!/\b(?:Edinburgh|Glasgow|Aberdeen|Dundee|Stirling|Inverness|Perth|Scotland|Fife|Lothian|Ayr|Kilmarnock|Bathgate|Broxburn|Blackford|Lochgelly|West Calder)\b/i.test(input.address||''))throw Error('Scottish business address unverified');
         const clinical=/dent|medical|clinic/i.test(input.sector);
+        // Release Chromium between businesses to bound the cron's memory use.
+        browser=await openWebsiteBrowser();
         const inspection=await inspectWebsite(browser,input.website,{clinical});
+        await browser.close();browser=null;
         const services=pageText(inspection.source.html);
         const sectorPattern=/accountant/i.test(input.sector)?/account|bookkeep|payroll/i:/survey/i.test(input.sector)?/survey|dilapidation|quantity|valuation/i:/roof/i.test(input.sector)?/roof|re-roof|reroof/i:/heating/i.test(input.sector)?/boiler|heat pump|heating installation/i:/dent/i.test(input.sector)?/dental|dentist|implant|orthodont/i:/medical|clinic/i.test(input.sector)?/private gp|medical|consultation|diagnostic/i:/electrical|electrician/i;
         if(!sectorPattern.test(services))throw Error('Advertised services do not verify the selected sector');
@@ -126,7 +130,9 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         if(!inspection.desktop.logo&&!inspection.desktop.accent)throw Error('Original branding not verified; concept held');
         for(const asset of [inspection.desktop.logo,inspection.desktop.photo].filter(Boolean)) {const result=await publicResource(asset);if(!result.contentType.startsWith('image/'))throw Error('Original image unavailable; concept held');}
         const preview=buildWebsite(candidate,inspection);
+        browser=await openWebsiteBrowser();
         await verifyPreview(browser,preview.html,candidate.email);candidate.previewVerified=true;
+        await browser.close();browser=null;
         await db.query(`INSERT INTO website_previews(prospect_id,html,desktop,mobile,manifest) VALUES($1,$2,$3,$4,$5) ON CONFLICT(prospect_id) DO UPDATE SET html=EXCLUDED.html,desktop=EXCLUDED.desktop,mobile=EXCLUDED.mobile,manifest=EXCLUDED.manifest`,[candidate.id,Buffer.from(preview.html),inspection.desktop.screenshot,inspection.mobile.screenshot,JSON.stringify(preview.manifest)]);
         summary.previewed++;
         const copy=composeWebsite(candidate);
@@ -156,6 +162,11 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
           if(['delivered','opened','read'].includes(actual.status))summary.confirmedDelivered++;
         }catch{senderClear=false;summary.errors.push('accepted-email-sender-or-delivery-check-needs-reconciliation');}
       }catch(error){summary.held++;summary.errors.push(error.message.replace(/https?:\/\/\S+/g,'[website]').slice(0,160));}
+      finally {
+        if(browser){await browser.close().catch(()=>{});browser=null;}
+        await db.query('UPDATE website_runs SET summary=$2,updated_at=now() WHERE run_date=$1',[window.date,JSON.stringify(summary)]);
+        console.log(JSON.stringify({campaign:'website-progress',date:window.date,qualified:summary.qualified,previewed:summary.previewed,accepted:summary.accepted,held:summary.held,skipped:summary.skipped}));
+      }
     }
     summary.status=summary.errors.length?'complete-with-holds':'complete';
     return summary;
