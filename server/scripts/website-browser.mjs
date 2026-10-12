@@ -2,7 +2,7 @@ import https from 'node:https';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { chromium } from 'playwright';
-import { publicAddress,readPublicPage,pageText,registeredNumber } from './website-evidence.mjs';
+import { publicAddress,readPublicPage,pageText,registeredNumber,publishedBusinessEmails,qualifyWebsite } from './website-evidence.mjs';
 import { domainKey,companyKey } from './outreach-policy.mjs';
 import { escapeHtml,websiteFindings } from './website-policy.mjs';
 
@@ -69,26 +69,32 @@ export async function inspectWebsite(browser,url,{clinical=false}={}) {
     return {source,desktop:captures[0],mobile:captures[1],findings:websiteFindings(captures[0],captures[1])};
   } finally {await context.close();}
 }
-export async function corporateWebsite(source,company) {
+export async function corporateWebsite(source,company,address,{read=readPublicPage}={}) {
   const pages=[source];const domain=domainKey(source.url);
   for(const href of [...source.html.matchAll(/href=["']([^"']+)["']/gi)].map(m=>m[1]).filter(s=>/contact|legal|privacy|terms/i.test(s)).slice(0,6)) {
     if(pages.length>=4)break;
-    try {const u=new URL(href,source.url);if(domainKey(u.href)===domain)pages.push(await readPublicPage(u.href,domain));}catch{}
+    try {const u=new URL(href,source.url);if(u.protocol==='https:'&&domainKey(u.href)===domain)pages.push(await read(u.href,domain));}catch{}
   }
   const numbers=[...new Set(pages.map(p=>registeredNumber(p.html)).filter(Boolean))];
   let corporate={verified:false};
   if(numbers.length===1) {
     try {
-      const registry=await readPublicPage('https://find-and-update.company-information.service.gov.uk/company/'+numbers[0],'find-and-update.company-information.service.gov.uk');
+      const registry=await read('https://find-and-update.company-information.service.gov.uk/company/'+numbers[0],'find-and-update.company-information.service.gov.uk');
       const text=pageText(registry.html),title=(registry.html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]||'').split(/\s+overview\s*/i)[0].trim();
       if(title&&/Company status\s+Active/i.test(text)&&text.includes(numbers[0])&&pages.some(p=>companyKey(pageText(p.html)).includes(companyKey(title))))corporate={verified:true,companyNumber:numbers[0],legalName:title,sourceUrl:registry.url};
     }catch{}
   }
-  const published=pages.flatMap(p=>(p.html.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)||[]).map(email=>({email:email.toLowerCase(),source:p.url})));
-  const mailbox=published.find(p=>domainKey(p.email.split('@')[1])===domain&&/^(info|hello|office|enquiries|inquiries|contact|admin|survey|reception)$/.test(p.email.split('@')[0]));
+  if(!corporate.verified&&numbers.length===0&&address) {
+    try {
+      const reviewed=await qualifyWebsite({website:source.url,address},company,{read:(url,expectedDomain)=>pages.find(p=>p.url===url)||read(url,expectedDomain)});
+      if(reviewed.candidate?.corporate.verified)corporate=reviewed.candidate.corporate;
+    }catch{}
+  }
+  const published=pages.flatMap(p=>publishedBusinessEmails(p.html,domain).map(email=>({email,source:p.url})));
+  const mailbox=published.find(p=>/^(info|hello|office|enquiries|inquiries|contact|admin|survey|reception)@/.test(p.email))||published[0];
   let professional={verified:false};
   const directoryLink=pages.flatMap(p=>[...p.html.matchAll(/href=["']([^"']+)["']/gi)].map(m=>m[1])).find(h=>/^https:\/\/(?:www\.)?ricsfirms\.com\/office\//i.test(h));
-  if(directoryLink)try {const listing=await readPublicPage(directoryLink,'ricsfirms.com');if(companyKey(pageText(listing.html)).includes(companyKey(company)))professional={verified:true,sourceUrl:listing.url};}catch{}
+  if(directoryLink)try {const listing=await read(directoryLink,'ricsfirms.com');if(companyKey(pageText(listing.html)).includes(companyKey(company)))professional={verified:true,sourceUrl:listing.url};}catch{}
   return {corporate,professional,email:mailbox?.email||null,emailSourceUrl:mailbox?.source||null,company};
 }
 export function buildWebsite(candidate,inspection) {

@@ -125,7 +125,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         const services=pageText(inspection.source.html);
         const sectorPattern=/accountant/i.test(input.sector)?/account|bookkeep|payroll/i:/survey/i.test(input.sector)?/survey|dilapidation|quantity|valuation/i:/roof/i.test(input.sector)?/roof|re-roof|reroof/i:/heating/i.test(input.sector)?/boiler|heat pump|heating installation/i:/dent/i.test(input.sector)?/dental|dentist|implant|orthodont/i:/medical|clinic/i.test(input.sector)?/private gp|medical|consultation|diagnostic/i:/electrical|electrician/i;
         if(!sectorPattern.test(services))throw Error('Advertised services do not verify the selected sector');
-        const corporate=await corporateWebsite(inspection.source,input.company);
+        const corporate=await corporateWebsite(inspection.source,input.company,input.address);
         const candidate={...input,...corporate,domain,website:inspection.source.url,evidence:{findings:inspection.findings,desktop:true,mobile:true,sourceUrl:inspection.source.url,checkedAt:new Date().toISOString(),sha256:createHash('sha256').update(inspection.source.html).digest('hex')},previewVerified:false};
         if(duplicate(candidate,contacts)||duplicate({...candidate,company:candidate.corporate.legalName},contacts)){summary.skipped++;continue;}
         const hold=recipientHold(candidate);
