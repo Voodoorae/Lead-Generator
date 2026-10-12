@@ -141,8 +141,13 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         if(!contact?.id||contact.locationId!==process.env.GHL_LOCATION_ID||contact.email?.toLowerCase()!==candidate.email)throw Error('Created contact mismatch; reconcile reservation');
         await db.query('UPDATE website_prospects SET contact_id=$2 WHERE id=$1',[candidate.id,contact.id]);
         if(suppressionReason(contact,await emailHistory(api,{contactId:contact.id})))throw Error('New contact suppressed; reservation held');
-        await submitWebsite(db,api,key,{type:'Email',contactId:contact.id,emailFrom:WEBSITE_FROM,emailTo:candidate.email,subject:copy.subject,html:copy.html});
+        const sent=await submitWebsite(db,api,key,{type:'Email',contactId:contact.id,emailFrom:WEBSITE_FROM,emailTo:candidate.email,subject:copy.subject,html:copy.html});
         await db.query("UPDATE website_prospects SET status='awaiting_reply',last_sent=now(),hold_reason=NULL,updated_at=now() WHERE id=$1",[candidate.id]);summary.accepted++;
+        try {
+          const actual=await emailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:contact.id,direction:'outbound'},process.env.GHL_LOCATION_ID);
+          if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Actual sender differs from Proxaim');
+          if(['delivered','opened','read'].includes(actual.status))summary.confirmedDelivered++;
+        }catch{senderClear=false;summary.errors.push('accepted-email-sender-or-delivery-check-needs-reconciliation');}
       }catch(error){summary.held++;summary.errors.push(error.message.replace(/https?:\/\/\S+/g,'[website]').slice(0,160));}
     }
     summary.status=summary.errors.length?'complete-with-holds':'complete';
