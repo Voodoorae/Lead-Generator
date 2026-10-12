@@ -3,6 +3,9 @@ import { domainKey, companyKey } from './outreach-policy.mjs';
 export const WEBSITE_LIMIT = 20;
 export const SHARED_LIMIT = 100;
 export const WEBSITE_FROM = 'hello@proxaim.com';
+export function websiteSectorAllowed(sector,date) {
+  return !/accountant/i.test(sector)||sector==='accountants-existing-build-exception'&&date==='2026-10-12';
+}
 export function websiteSenderVerified(email) {
   return ['delivered','opened','read','clicked'].includes(email.status)&&/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(email.emailFrom);
 }

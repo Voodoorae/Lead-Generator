@@ -6,7 +6,7 @@ import { companyKey,domainKey,duplicate,suppressionReason,verifiedEmail,outbound
 import { postLeadJson } from './lead-api.mjs';
 import { ensureWebsite,reserveWebsite,submitWebsite,retireWebsite } from './website-store.mjs';
 import { ensureOutreach } from './outreach-store.mjs';
-import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM,websiteSenderVerified } from './website-policy.mjs';
+import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM,websiteSenderVerified,websiteSectorAllowed } from './website-policy.mjs';
 import { openWebsiteBrowser,inspectWebsite,corporateWebsite,buildWebsite,verifyPreview,publicResource } from './website-browser.mjs';
 import { pageText } from './website-evidence.mjs';
 import { ensureSales } from './website-sales.mjs';
@@ -110,6 +110,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     const seen=new Set();let considered=0;
     for await(const input of candidates()) {
       if(considered++>=35)break;
+      if(!websiteSectorAllowed(input.sector,window.date)){summary.skipped++;continue;}
       const domain=domainKey(input.website);if(!domain||seen.has(domain)){summary.skipped++;continue;}seen.add(domain);
       const existing=(await db.query('SELECT status FROM website_prospects WHERE domain=$1',[domain])).rows[0];
       if(existing&&existing.status!=='held'){summary.skipped++;continue;}

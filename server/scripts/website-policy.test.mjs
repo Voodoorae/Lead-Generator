@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {websiteWindow,websiteSearches,websiteFindings,recipientHold,composeWebsite,retireDecision,websiteSenderVerified} from './website-policy.mjs';
+import {websiteWindow,websiteSearches,websiteFindings,recipientHold,composeWebsite,retireDecision,websiteSenderVerified,websiteSectorAllowed} from './website-policy.mjs';
 import {reserveWebsite,submitWebsite} from './website-store.mjs';
 test('9am UK stays correct across DST and excludes weekends',()=>{
   assert.equal(websiteWindow(new Date('2026-10-23T08:00:00Z')).due,true);
@@ -15,6 +15,12 @@ test('findings reflect actual links/measurements; complete good pages do not qua
   assert.deepEqual(websiteFindings({...desktop,links:[]},{width:390,scrollWidth:390}),[]);
 });
 const candidate={company:'Synthetic Co',website:'https://example.invalid',domain:'example.invalid',email:'info@example.invalid',emailSourceUrl:'https://example.invalid/contact',sector:'commercial electricians',corporate:{verified:true},evidence:{findings:['An observed test finding.','Another observed test finding.'],desktop:true,mobile:true}};
+test('accountant exception cannot become permission on another date or for new accountants',()=>{
+  assert(websiteSectorAllowed('accountants-existing-build-exception','2026-10-12'));
+  assert(!websiteSectorAllowed('accountants-existing-build-exception','2026-10-13'));
+  assert(!websiteSectorAllowed('accountants','2026-10-12'));
+  assert(websiteSectorAllowed('surveyors','2026-10-13'));
+});
 test('a clicked internal proof remains valid only with the actual Proxaim sender',()=>{
   assert(websiteSenderVerified({status:'clicked',emailFrom:'Steven Nisbet <hello@proxaim.com>'}));
   assert(!websiteSenderVerified({status:'accepted',emailFrom:'Steven Nisbet <hello@proxaim.com>'}));
