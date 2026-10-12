@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 const MAX_WAIT_MS = 300_000;
 
 export function retryDelay(retryAfter, attempt, now = Date.now()) {
@@ -26,13 +27,22 @@ export async function postLeadJson(url, body, {
       body: JSON.stringify(body), signal: AbortSignal.timeout(240_000),
     });
     if (response.ok) return response.json();
+    if ([429,503].includes(response.status)) {
+      const body = await response.text();
+      log({status:'lead-api-error-response',httpStatus:response.status,attempt:attempt+1,
+        headers:Object.fromEntries(['server','content-type','retry-after','rndr-id','x-render-origin-server','cf-ray','cf-mitigated','x-powered-by'].map(name=>[name,response.headers.get(name)])),
+        bodySha256:createHash('sha256').update(body).digest('hex'),
+        bodyLooksHtml:/<html|<!doctype/i.test(body),bodyMentionsRender:/\brender\b/i.test(body),
+        bodyMentionsRateLimit:/too many requests|rate.?limit/i.test(body),
+        bodyMentionsStartup:/spin.?up|starting|waking|loading/i.test(body)});
+    }
     if (![429, 503].includes(response.status) || attempt === 4) {
-      await response.body?.cancel();
+      if (!response.bodyUsed) await response.body?.cancel();
       throw new Error(`Lead Generator HTTP ${response.status}; collection stopped after ${attempt + 1} attempt(s)`);
     }
     const waitMs = retryDelay(response.headers.get('retry-after'), attempt);
-    await response.body?.cancel();
-    // Only status and timing are logged, never credentials or contact data.
+    if (!response.bodyUsed) await response.body?.cancel();
+    // Raw response bodies, credentials and contact data are never logged.
     log({ status: 'lead-api-retry', httpStatus: response.status, attempt: attempt + 1, waitMs });
     await sleep(waitMs);
   }
