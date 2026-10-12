@@ -38,9 +38,9 @@ export function recipientHold(candidate) {
 export function composeWebsite(candidate) {
   if(recipientHold(candidate)) throw Error('Candidate not qualified');
   const name=String(candidate.company).replace(/[\r\n\u2014]/g,' ').slice(0,150);
-  const opening=candidate.previewVerified?`I've put together a website preview for ${name}, using your existing branding and public business details.`:`I noticed ${candidate.evidence.findings[0]} I could prepare a website concept for ${name}.`;
-  const invitation=candidate.previewVerified?'You can review the design preview before deciding to go ahead. Would you like me to show you?':'You can review a design preview before deciding to go ahead. Would you like me to prepare one?';
-  const message=`Hello ${name} team,\n\n${opening}\n\nWe offer a one-page website build for £299, using your current domain and hosting, with a customer booking-request form. We would check your hosting setup before starting.\n\n${invitation}\n\nBest,\nProxaim\n${WEBSITE_FROM}\n\nIf this is not relevant, reply to let me know and I won't contact you again.`;
+  const opening=candidate.previewVerified?`I've put together a website preview for ${name}, using your existing branding.`:`I noticed ${candidate.evidence.findings[0]}`;
+  const invitation=candidate.previewVerified?'Would you like to see the preview before deciding?':'Would you like me to prepare a preview before you decide?';
+  const message=`Hello ${name} team,\n\n${opening}\n\nA one-page build is £299 on your existing domain and hosting, including a customer booking-request form.\n\n${invitation}\n\nProxaim\n${WEBSITE_FROM}\n\nIf this isn't relevant, reply and I'll stop contacting you.`;
   return {subject:(candidate.previewVerified?'A website preview for ':'A one-page website for ')+name,message,html:'<div>'+escapeHtml(message).replace(/\n/g,'<br>')+'</div>'};
 }
 export function sameBusiness(a,b) {
