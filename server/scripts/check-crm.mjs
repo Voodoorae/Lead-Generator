@@ -3,6 +3,15 @@ import { londonWindow } from './prospecting-policy.mjs';
 import { internalReadiness } from './internal-readiness.mjs';
 import { testCloudLedger } from './cloud-ledger-test.mjs';
 import { runOutreach } from './run-outreach.mjs';
+// An empty search exercises cloud HTTP routing without a paid Places request.
+if (process.env.LEAD_HTTP_DIAGNOSTIC_DATE === londonWindow().date) {
+  const url = new URL('/api/leads', process.env.LEAD_GENERATOR_URL);
+  if (url.protocol !== 'https:') throw new Error('Diagnostic requires HTTPS');
+  const response = await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body:'{}', signal:AbortSignal.timeout(120_000) });
+  const headers = Object.fromEntries(['server','content-type','retry-after','rndr-id','x-render-origin-server','cf-ray','x-powered-by'].map(name => [name,response.headers.get(name)]));
+  const body = (await response.text()).slice(0,2000);
+  console.log(JSON.stringify({status:'lead-http-diagnostic',httpStatus:response.status,headers,body,sent:0}));
+}
 // Build-time diagnostics run only on the dedicated prospecting cron.
 // Ordinary web-service builds without these settings are unaffected.
 if (!process.env.GHL_API_TOKEN && !process.env.GHL_LOCATION_ID) {
@@ -23,3 +32,4 @@ if (!process.env.GHL_API_TOKEN && !process.env.GHL_LOCATION_ID) {
     process.exitCode = 1;
   }
 }
+
