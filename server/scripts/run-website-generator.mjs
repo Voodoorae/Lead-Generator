@@ -8,6 +8,7 @@ import { ensureWebsite,reserveWebsite,submitWebsite,retireWebsite } from './webs
 import { ensureOutreach } from './outreach-store.mjs';
 import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM } from './website-policy.mjs';
 import { openWebsiteBrowser,inspectWebsite,corporateWebsite,buildWebsite,verifyPreview,publicResource } from './website-browser.mjs';
+import { pageText } from './website-evidence.mjs';
 
 export const workflowSignature = workflows => createHash('sha256').update(JSON.stringify(workflows.filter(w=>w.status==='published').map(w=>({id:w.id,updatedAt:w.updatedAt,version:w.version})).sort((a,b)=>a.id.localeCompare(b.id)))).digest('hex');
 export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) {
@@ -44,6 +45,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     try {
       const result=await api('GET','/workflows/');
       if(!Array.isArray(result.workflows))throw Error('Workflow inventory unavailable');
+      if(result.workflows.some(w=>w.locationId!==process.env.GHL_LOCATION_ID))throw Error('Workflow account mismatch');
       const signature=workflowSignature(result.workflows);
       workflowClear=signature===process.env.WEBSITE_WORKFLOW_SIGNATURE;
       await db.query(`INSERT INTO website_controls(key,value) VALUES('workflow-inventory',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,[JSON.stringify({signature,reviewed:workflowClear,published:result.workflows.filter(w=>w.status==='published').length})]);
@@ -52,8 +54,9 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     const history=await emailHistory(api,{startDate:new Date(Date.parse(window.date+'T00:00:00Z')-86400000).toISOString()});
     // Check a previously delivered internal test by actual sender. No repeated probe mail.
     let senderClear=false;
-    if(process.env.WEBSITE_SENDER_TEST_ID&&process.env.GHL_PROBE_CONTACT_ID) {
-      try {const test=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:process.env.GHL_PROBE_CONTACT_ID,direction:'outbound'},process.env.GHL_LOCATION_ID);
+    const senderContact=process.env.WEBSITE_SENDER_TEST_CONTACT_ID||process.env.GHL_PROBE_CONTACT_ID;
+    if(process.env.WEBSITE_SENDER_TEST_ID&&senderContact) {
+      try {const test=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:senderContact,direction:'outbound'},process.env.GHL_LOCATION_ID);
         senderClear=['delivered','opened','read'].includes(test.status)&&/^Proxaim\s*<hello@proxaim\.com>$/i.test(test.emailFrom);
       }catch{summary.errors.push('actual-sender-test-unavailable');}
     }
@@ -109,6 +112,9 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         if(!/\b(?:Edinburgh|Glasgow|Aberdeen|Dundee|Stirling|Inverness|Perth|Scotland|Fife|Lothian|Ayr|Kilmarnock|Bathgate|Broxburn|Blackford|Lochgelly|West Calder)\b/i.test(input.address||''))throw Error('Scottish business address unverified');
         const clinical=/dent|medical|clinic/i.test(input.sector);
         const inspection=await inspectWebsite(browser,input.website,{clinical});
+        const services=pageText(inspection.source.html);
+        const sectorPattern=/accountant/i.test(input.sector)?/account|bookkeep|payroll/i:/survey/i.test(input.sector)?/survey|dilapidation|quantity|valuation/i:/roof/i.test(input.sector)?/roof|re-roof|reroof/i:/heating/i.test(input.sector)?/boiler|heat pump|heating installation/i:/dent/i.test(input.sector)?/dental|dentist|implant|orthodont/i:/medical|clinic/i.test(input.sector)?/private gp|medical|consultation|diagnostic/i:/electrical|electrician/i;
+        if(!sectorPattern.test(services))throw Error('Advertised services do not verify the selected sector');
         const corporate=await corporateWebsite(inspection.source,input.company);
         const candidate={...input,...corporate,domain,website:inspection.source.url,evidence:{findings:inspection.findings,desktop:true,mobile:true,sourceUrl:inspection.source.url,checkedAt:new Date().toISOString(),sha256:createHash('sha256').update(inspection.source.html).digest('hex')},previewVerified:false};
         if(duplicate(candidate,contacts)||duplicate({...candidate,company:candidate.corporate.legalName},contacts)){summary.skipped++;continue;}

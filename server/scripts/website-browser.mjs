@@ -103,11 +103,14 @@ export function buildWebsite(candidate,inspection) {
 }
 export async function verifyPreview(browser,html,email) {
   const context=await browser.newContext({javaScriptEnabled:false,serviceWorkers:'block'});
-  await context.route('**/*',route=>route.abort());
+  await context.route('**/*',async route=>{
+    if(route.request().resourceType()!=='image')return route.abort();
+    try{const asset=await publicResource(route.request().url());if(!asset.contentType.startsWith('image/'))return route.abort();await route.fulfill({status:200,contentType:asset.contentType,body:asset.body});}catch{await route.abort();}
+  });
   try {
     const page=await context.newPage();await page.setViewportSize({width:390,height:844});await page.setContent(html);
-    const result=await page.evaluate(email=>({overflow:document.documentElement.scrollWidth>innerWidth+2,contact:Array.from(document.querySelectorAll('a')).some(a=>a.getAttribute('href')==='mailto:'+email)}),email);
-    if(result.overflow||!result.contact)throw Error('Preview QA failed');
+    const result=await page.evaluate(email=>({overflow:document.documentElement.scrollWidth>innerWidth+2,contact:Array.from(document.querySelectorAll('a')).some(a=>a.getAttribute('href')==='mailto:'+email),imagesLoaded:Array.from(document.images).every(i=>i.complete&&i.naturalWidth>0)}),email);
+    if(result.overflow||!result.contact||!result.imagesLoaded)throw Error('Preview QA failed');
     return await page.screenshot({type:'jpeg',quality:65});
   } finally {await context.close();}
 }
