@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { addWeekdays, outboundCount, suppressionReason } from './outreach-policy.mjs';
 import { apiClient, emailHistory, emailDetail } from './outreach-api.mjs';
-import { escapeHtml, WEBSITE_FROM, websiteWindow } from './website-policy.mjs';
+import { escapeHtml, WEBSITE_FROM, websiteWindow, websiteSenderVerified } from './website-policy.mjs';
 import { ensureWebsite } from './website-store.mjs';
 import pg from 'pg';
 
@@ -73,7 +73,7 @@ export async function sendInterestAcknowledgements(db,api,date) {
   const candidates=(await db.query("SELECT p.*,s.last_reply_id FROM website_sales s JOIN website_prospects p ON p.id=s.prospect_id JOIN website_reply_events e ON e.message_id=s.last_reply_id WHERE s.stage='engaged' AND e.classification='positive' AND p.status<>'retired' AND p.outcome IS NULL ORDER BY s.updated_at LIMIT 20")).rows;
   if(!candidates.length)return 0;
   const proof=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:process.env.WEBSITE_SENDER_TEST_CONTACT_ID,direction:'outbound'},process.env.GHL_LOCATION_ID);
-  if(!['delivered','opened','read'].includes(proof.status)||!/^Proxaim\s*<hello@proxaim\.com>$/i.test(proof.emailFrom))throw Error('Acknowledgement sender not verified');
+  if(!websiteSenderVerified(proof))throw Error('Acknowledgement sender not verified');
   let accepted=0;
   for(const candidate of candidates) {
     const contact=(await api('GET','/contacts/'+candidate.contact_id)).contact;
@@ -140,7 +140,7 @@ export async function runWebsiteReplies() {
     const contact=(await api('GET','/contacts/'+contactId)).contact;
     if(contact?.locationId!==process.env.GHL_LOCATION_ID||contact.email?.toLowerCase()!==recipient.toLowerCase()||suppressionReason(contact))throw Error('Notification recipient not cleared');
     const test=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:process.env.WEBSITE_SENDER_TEST_CONTACT_ID,direction:'outbound'},process.env.GHL_LOCATION_ID);
-    if(!['delivered','opened','read'].includes(test.status)||!/^Proxaim\s*<hello@proxaim\.com>$/i.test(test.emailFrom))throw Error('Notification sender not verified');
+    if(!websiteSenderVerified(test))throw Error('Notification sender not verified');
     for(const alert of alerts) {
       const history=await emailHistory(api,{startDate:new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString()});
       const observed=outboundCount(history,date);

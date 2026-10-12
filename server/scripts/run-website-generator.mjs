@@ -6,7 +6,7 @@ import { companyKey,domainKey,duplicate,suppressionReason,verifiedEmail,outbound
 import { postLeadJson } from './lead-api.mjs';
 import { ensureWebsite,reserveWebsite,submitWebsite,retireWebsite } from './website-store.mjs';
 import { ensureOutreach } from './outreach-store.mjs';
-import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM } from './website-policy.mjs';
+import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM,websiteSenderVerified } from './website-policy.mjs';
 import { openWebsiteBrowser,inspectWebsite,corporateWebsite,buildWebsite,verifyPreview,publicResource } from './website-browser.mjs';
 import { pageText } from './website-evidence.mjs';
 import { ensureSales } from './website-sales.mjs';
@@ -58,7 +58,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     const senderContact=process.env.WEBSITE_SENDER_TEST_CONTACT_ID||process.env.GHL_PROBE_CONTACT_ID;
     if(process.env.WEBSITE_SENDER_TEST_ID&&senderContact) {
       try {const test=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:senderContact,direction:'outbound'},process.env.GHL_LOCATION_ID);
-        senderClear=['delivered','opened','read'].includes(test.status)&&/^Proxaim\s*<hello@proxaim\.com>$/i.test(test.emailFrom);
+        senderClear=websiteSenderVerified(test);
       }catch{summary.errors.push('actual-sender-test-unavailable');}
     }
     if(!senderClear)summary.errors.push('verified-proxaim-sender-required');
