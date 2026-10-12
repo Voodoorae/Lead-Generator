@@ -1,0 +1,14 @@
+# Starter delivery checklist
+
+This is an operating procedure, not evidence that a paid page has been built. The five-day build and two-day revision targets are provisional planning allowances until actual delivery performance is measured. Do not add a deadline to automated outreach or accept more paid starts than available capacity supports.
+
+1. Refresh original business evidence and QA the personalised preview. Show it by an agreed private review or screenshots. Do not email a localhost URL, a shared dashboard key, or deploy publicly without authorisation. Record what was shown, when, and the prospect's response as the completed preview-review stage.
+2. Before sending a quote, verify current hosting, deployment access and a supported form-delivery mechanism. If unsupported, hold and explain the specific limitation before acceptance. Do not force a hosting upgrade or promise compatibility that was not checked.
+3. Agree the page sections, content/images, five form fields, receiving inbox, privacy wording, revision allowance, commercial terms and actual delivery slot. Confirm the total payable price and VAT treatment. Quotes remain drafts for Rachael's review. Client interest alone is not acceptance.
+4. Confirm acceptance and any agreed payment condition. Check every client-supplied item in STARTER-OFFER.md. Record the ready-to-start date and confirmed build-review deadline. A speculative preview is not an accepted or paid project.
+5. Build to the agreed page scope. Verify original asset permissions and published content. Test mobile and desktop layout, navigation, form validation, spam protection, failure handling and receipt in the actual approved inbox. Use an explicitly labelled test submission. Do not record patient information in test data.
+6. Send the completed build for review and collect one consolidated change list. Complete included revisions. Fix our errors independently of that allowance. Agree any additional work and price before doing it. Record pauses and revised dates rather than counting client waiting time as delivery work.
+7. Record written sign-off, launch authorisation, actual form receipt and handoff. Preserve the customer site. Mark onboarding complete only after delivery and handoff evidence; then retire the speculative local preview and preserve the permanent prospect/outreach history.
+8. Ask permission to discuss a relevant optional addition after sign-off. Do not enrol the customer in an automatic upsell sequence. Monitor support needs and actual costs before setting add-on fees.
+
+For the first five paid starter builds, record hours for access checks, content, build, revisions, testing and launch; ready-to-start, review and handoff dates; paused days; unexpected expenses; and customer feedback. Compare actual delivery with the proposed targets before calling the timeframe proven or promising a standard guaranteed turnaround.
