@@ -20,6 +20,8 @@ if (!process.env.GHL_API_TOKEN && !process.env.GHL_LOCATION_ID) {
   try {
     const result = await checkCrm({ token: process.env.GHL_API_TOKEN, locationId: process.env.GHL_LOCATION_ID, probeContactId: process.env.GHL_PROBE_CONTACT_ID });
     console.log(JSON.stringify(result));
+    const sender=String(process.env.GHL_EMAIL_FROM || '').trim();
+    console.log(JSON.stringify({status:'cloud-sender-configuration',configuredAsSteven:/^(?:Steven Nisbet\s*<)?steve\.nisbet@becomefoundbyai\.com>?$/i.test(sender),configuredAsProxaim:sender.includes('hello@proxaim.com'),hasDisplayName:sender.startsWith('Steven Nisbet <'),sendingEnabled:process.env.OUTREACH_ENABLED==='true'}));
     const today=londonWindow().date;
     if (process.env.OUTREACH_READINESS_CHECK_DATE===today) console.log(JSON.stringify(await testCloudLedger()));
     if (process.env.OUTREACH_INTERNAL_TEST_DATE===today) console.log(JSON.stringify(await internalReadiness({send:true})));
