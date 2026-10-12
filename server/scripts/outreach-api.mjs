@@ -43,6 +43,14 @@ export async function emailDetail(api,message,locationId) {
   if(email.locationId!==locationId || email.contactId!==message.contactId || !email.status || email.direction!==message.direction) throw new Error('Email detail account or message mismatch');
   return {...message,status:email.status,emailFrom:email.from};
 }
+export async function proxaimEmailDetail(api,message,locationId,{sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}) {
+  for(let attempt=0;attempt<4;attempt++) {
+    const actual=await emailDetail(api,message,locationId);
+    if(/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))return actual;
+    if(attempt===3)throw Error('Actual Proxaim sender could not be confirmed; reconcile before continuing');
+    await sleep(1000*(attempt+1));
+  }
+}
 export async function allContacts(api) {
   const contacts = [], seen = new Set();
   let searchAfter;
