@@ -18,7 +18,8 @@ export async function reserveWebsite(db,{id,prospectId,date,observedForeign,fore
     const count=(await db.query('SELECT count(*)::integer n FROM website_attempts WHERE run_date=$1',[date])).rows[0].n;
     const alerts=(await db.query("SELECT count(*)::integer n FROM website_alerts WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')",[date])).rows[0].n;
     const acknowledgements=(await db.query("SELECT count(*)::integer n FROM website_acknowledgements WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')",[date])).rows[0].n;
-    if(count>=WEBSITE_LIMIT||count+alerts+acknowledgements+Math.max(foreignReserve,observedForeign)>=SHARED_LIMIT) {await db.query('ROLLBACK');return false;}
+    const tests=(await db.query("SELECT count(*)::integer n FROM website_controls WHERE key LIKE 'notification-test-%' AND value->>'date'=$1",[date])).rows[0].n;
+    if(count>=WEBSITE_LIMIT||count+alerts+acknowledgements+tests+Math.max(foreignReserve,observedForeign)>=SHARED_LIMIT) {await db.query('ROLLBACK');return false;}
     await db.query("INSERT INTO website_attempts(id,prospect_id,run_date,status,message) VALUES($1,$2,$3,'reserved',$4)",[id,prospectId,date,JSON.stringify(message)]);
     await db.query('COMMIT');return true;
   } catch(error) {await db.query('ROLLBACK');throw error;}

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { addWeekdays, outboundCount, suppressionReason } from './outreach-policy.mjs';
-import { apiClient, emailHistory, emailDetail } from './outreach-api.mjs';
+import { apiClient, emailHistory, emailDetail, proxaimEmailDetail } from './outreach-api.mjs';
 import { escapeHtml, WEBSITE_FROM, websiteWindow, websiteSenderVerified } from './website-policy.mjs';
 import { ensureWebsite } from './website-store.mjs';
 import pg from 'pg';
@@ -87,14 +87,14 @@ export async function sendInterestAcknowledgements(db,api,date) {
     await db.query('BEGIN');let reserved=false;
     try {
       await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
-      const n=Number((await db.query(`SELECT (SELECT count(*) FROM website_attempts WHERE run_date=$1)+(SELECT count(*) FROM website_alerts WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_acknowledgements WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')) AS n`,[date])).rows[0].n);
+      const n=Number((await db.query(`SELECT (SELECT count(*) FROM website_attempts WHERE run_date=$1::date)+(SELECT count(*) FROM website_alerts WHERE run_date=$1::date AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_acknowledgements WHERE run_date=$1::date AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_controls WHERE key LIKE 'notification-test-%' AND value->>'date'=$1::text) AS n`,[date])).rows[0].n);
       if(observed<100&&80+n<100)reserved=(await db.query("INSERT INTO website_acknowledgements(prospect_id,reply_id,status,run_date) VALUES($1,$2,'reserved',$3) ON CONFLICT DO NOTHING RETURNING prospect_id",[candidate.id,latest.id,date])).rowCount===1;
       await db.query('COMMIT');
     }catch(error){await db.query('ROLLBACK');throw error;}
     if(!reserved)continue;
     const copy=interestAcknowledgement();
     const sent=await submitAcknowledgement(db,api,candidate.id,{type:'Email',contactId:candidate.contact_id,emailFrom:WEBSITE_FROM,emailTo:candidate.email,subject:copy.subject,html:copy.html});accepted++;
-    const actual=await emailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:candidate.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID);
+    const actual=await proxaimEmailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:candidate.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID);
     if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Accepted acknowledgement sender mismatch; reconcile');
   }
   return accepted;
@@ -109,6 +109,41 @@ export async function submitAlert(db,api,alert,body) {
   }catch{await db.query("UPDATE website_alerts SET status='uncertain',updated_at=now() WHERE id=$1 AND status='reserved'").catch(()=>{});throw Error('Uncertain notification; no automatic retry');}
 }
 
+export async function notificationTest(db,api,date) {
+  if(process.env.WEBSITE_NOTIFICATION_TEST_DATE!==date)return null;
+  const key='notification-test-'+date;
+  let record=(await db.query('SELECT value FROM website_controls WHERE key=$1',[key])).rows[0]?.value;
+  if(!record) {
+    const contactId=process.env.WEBSITE_ALERT_CONTACT_ID,recipient=process.env.WEBSITE_ALERT_EMAIL;
+    const contact=(await api('GET','/contacts/'+contactId)).contact;
+    if(contact?.locationId!==process.env.GHL_LOCATION_ID||contact.email?.toLowerCase()!==recipient?.toLowerCase()||suppressionReason(contact))throw Error('Internal test recipient not cleared');
+    const proof=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:process.env.WEBSITE_SENDER_TEST_CONTACT_ID,direction:'outbound'},process.env.GHL_LOCATION_ID);
+    if(!websiteSenderVerified(proof))throw Error('Internal test sender proof invalid');
+    const observed=outboundCount(await emailHistory(api,{startDate:new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString()}),date);
+    await db.query('BEGIN');let reserved=false;
+    try {
+      await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
+      const n=Number((await db.query(`SELECT (SELECT count(*) FROM website_attempts WHERE run_date=$1::date)+(SELECT count(*) FROM website_alerts WHERE run_date=$1::date AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_acknowledgements WHERE run_date=$1::date AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_controls WHERE key LIKE 'notification-test-%' AND value->>'date'=$1::text) AS n`,[date])).rows[0].n);
+      if(observed<100&&80+n<100)reserved=(await db.query('INSERT INTO website_controls(key,value) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING key',[key,JSON.stringify({date,status:'reserved',contactId})])).rowCount===1;
+      await db.query('COMMIT');
+    }catch(error){await db.query('ROLLBACK');throw error;}
+    if(!reserved)return {status:'held'};
+    try {
+      const sent=await api('POST','/conversations/messages',{body:{type:'Email',contactId,emailTo:recipient,emailFrom:WEBSITE_FROM,subject:'Proxaim cloud notification test',html:'<p>This is a clearly labelled internal test from the Proxaim Render worker.</p><p>No prospect has replied or been contacted by this test. It checks that the cloud worker can send your notifications from hello@proxaim.com.</p><p>Proxaim</p>'}});
+      if(!sent.messageId&&!sent.emailMessageId)throw Error('Test provider ID missing');
+      record={date,status:'accepted',contactId,messageId:sent.messageId,emailMessageId:sent.emailMessageId};
+      await db.query('UPDATE website_controls SET value=$2,updated_at=now() WHERE key=$1',[key,JSON.stringify(record)]);
+    }catch{await db.query('UPDATE website_controls SET value=$2,updated_at=now() WHERE key=$1',[key,JSON.stringify({date,status:'uncertain',contactId})]).catch(()=>{});throw Error('Uncertain internal test; no automatic retry');}
+  }
+  if(record.status==='accepted') {
+    const actual=await proxaimEmailDetail(api,{id:record.emailMessageId||record.messageId,contactId:record.contactId,direction:'outbound'},process.env.GHL_LOCATION_ID);
+    if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Internal cloud test sender mismatch');
+    record={...record,observedStatus:actual.status,actualFrom:actual.emailFrom};
+    await db.query('UPDATE website_controls SET value=$2,updated_at=now() WHERE key=$1',[key,JSON.stringify(record)]);
+  }
+  return {status:record.status,observedStatus:record.observedStatus};
+}
+
 export async function runWebsiteReplies() {
   if(!process.env.DATABASE_URL||!process.env.GHL_API_TOKEN||!process.env.GHL_LOCATION_ID)return {status:'reply-monitor-not-configured'};
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL}),db=await pool.connect();let owns=false;
@@ -118,6 +153,7 @@ export async function runWebsiteReplies() {
     if(!owns)return {status:'outreach-running'};
     await ensureWebsite(db);await ensureSales(db);
     const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID}),date=websiteWindow().date;
+    summary.notificationTest=await notificationTest(db,api,date);
     const rows=(await db.query("SELECT * FROM website_prospects WHERE contact_id IS NOT NULL AND last_sent IS NOT NULL AND status<>'retired'")).rows;
     for(const row of rows) {
       const messages=await emailHistory(api,{contactId:row.contact_id});
@@ -148,7 +184,7 @@ export async function runWebsiteReplies() {
       let reserved=false;
       try {
         await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
-        const n=(await db.query(`SELECT (SELECT count(*) FROM website_attempts WHERE run_date=$1)+(SELECT count(*) FROM website_alerts WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_acknowledgements WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')) AS n`,[date])).rows[0].n;
+        const n=(await db.query(`SELECT (SELECT count(*) FROM website_attempts WHERE run_date=$1::date)+(SELECT count(*) FROM website_alerts WHERE run_date=$1::date AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_acknowledgements WHERE run_date=$1::date AND status IN ('reserved','accepted','uncertain'))+(SELECT count(*) FROM website_controls WHERE key LIKE 'notification-test-%' AND value->>'date'=$1::text) AS n`,[date])).rows[0].n;
         if(observed<100&&80+Number(n)<100)reserved=(await db.query("UPDATE website_alerts SET status='reserved',run_date=$2,updated_at=now() WHERE id=$1 AND status='pending' RETURNING id",[alert.id,date])).rowCount===1;
         await db.query('COMMIT');
       }catch(error){await db.query('ROLLBACK');throw error;}
@@ -157,7 +193,7 @@ export async function runWebsiteReplies() {
       const crm='https://app.gohighlevel.com/v2/location/'+encodeURIComponent(process.env.GHL_LOCATION_ID)+'/contacts/detail/'+encodeURIComponent(alert.contact_id);
       const html=`<p>${escapeHtml(company)} has sent a reply matching an interest signal. Please review the actual reply before making a commitment.</p><p><a href="${escapeHtml(crm)}">Open the contact in CRM</a></p><p>A tailored reply draft is saved in the private generator dashboard. Suggested next step: confirm their priority service and arrange a short discovery call.</p><p>Proxaim</p>`;
       const sent=await submitAlert(db,api,alert,{type:'Email',contactId,emailTo:recipient,emailFrom:WEBSITE_FROM,subject:'Website enquiry: '+company,html});summary.alertsAccepted++;
-      const actual=await emailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId,direction:'outbound'},process.env.GHL_LOCATION_ID);
+      const actual=await proxaimEmailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId,direction:'outbound'},process.env.GHL_LOCATION_ID);
       if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Accepted notification sender mismatch; reconcile before continuing');
     }
     return summary;

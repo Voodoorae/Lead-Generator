@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { apiClient,allContacts,emailHistory,emailDetail } from './outreach-api.mjs';
+import { apiClient,allContacts,emailHistory,emailDetail,proxaimEmailDetail } from './outreach-api.mjs';
 import { companyKey,domainKey,duplicate,suppressionReason,verifiedEmail,outboundCount } from './outreach-policy.mjs';
 import { postLeadJson } from './lead-api.mjs';
 import { ensureWebsite,reserveWebsite,submitWebsite,retireWebsite } from './website-store.mjs';
@@ -151,7 +151,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         const sent=await submitWebsite(db,api,key,{type:'Email',contactId:contact.id,emailFrom:WEBSITE_FROM,emailTo:candidate.email,subject:copy.subject,html:copy.html});
         await db.query("UPDATE website_prospects SET status='awaiting_reply',last_sent=now(),hold_reason=NULL,updated_at=now() WHERE id=$1",[candidate.id]);summary.accepted++;
         try {
-          const actual=await emailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:contact.id,direction:'outbound'},process.env.GHL_LOCATION_ID);
+          const actual=await proxaimEmailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:contact.id,direction:'outbound'},process.env.GHL_LOCATION_ID);
           if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Actual sender differs from Proxaim');
           if(['delivered','opened','read'].includes(actual.status))summary.confirmedDelivered++;
         }catch{senderClear=false;summary.errors.push('accepted-email-sender-or-delivery-check-needs-reconciliation');}
