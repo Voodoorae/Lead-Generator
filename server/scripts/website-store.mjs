@@ -16,7 +16,8 @@ export async function reserveWebsite(db,{id,prospectId,date,observedForeign,fore
     await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
     if((await db.query('SELECT 1 FROM website_attempts WHERE id=$1 OR prospect_id=$2',[id,prospectId])).rowCount) {await db.query('ROLLBACK');return false;}
     const count=(await db.query('SELECT count(*)::integer n FROM website_attempts WHERE run_date=$1',[date])).rows[0].n;
-    if(count>=WEBSITE_LIMIT||count+Math.max(foreignReserve,observedForeign)>=SHARED_LIMIT) {await db.query('ROLLBACK');return false;}
+    const alerts=(await db.query("SELECT count(*)::integer n FROM website_alerts WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')",[date])).rows[0].n;
+    if(count>=WEBSITE_LIMIT||count+alerts+Math.max(foreignReserve,observedForeign)>=SHARED_LIMIT) {await db.query('ROLLBACK');return false;}
     await db.query("INSERT INTO website_attempts(id,prospect_id,run_date,status,message) VALUES($1,$2,$3,'reserved',$4)",[id,prospectId,date,JSON.stringify(message)]);
     await db.query('COMMIT');return true;
   } catch(error) {await db.query('ROLLBACK');throw error;}

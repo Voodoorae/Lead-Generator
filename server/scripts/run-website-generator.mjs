@@ -9,6 +9,7 @@ import { ensureOutreach } from './outreach-store.mjs';
 import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM } from './website-policy.mjs';
 import { openWebsiteBrowser,inspectWebsite,corporateWebsite,buildWebsite,verifyPreview,publicResource } from './website-browser.mjs';
 import { pageText } from './website-evidence.mjs';
+import { ensureSales } from './website-sales.mjs';
 
 export const workflowSignature = workflows => createHash('sha256').update(JSON.stringify(workflows.filter(w=>w.status==='published').map(w=>({id:w.id,updatedAt:w.updatedAt,version:w.version})).sort((a,b)=>a.id.localeCompare(b.id)))).digest('hex');
 export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) {
@@ -23,7 +24,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
   try {
     owns=(await db.query('SELECT pg_try_advisory_lock($1) acquired',[7101027])).rows[0].acquired;
     if(!owns)return {status:'other-outreach-running',sent:0};
-    await ensureOutreach(db);await ensureWebsite(db);
+    await ensureOutreach(db);await ensureWebsite(db);await ensureSales(db);
     // Private migration data is an environment setting, never committed to a public repo.
     if(process.env.WEBSITE_MIGRATION_SEED) {
       const seeds=JSON.parse(gunzipSync(Buffer.from(process.env.WEBSITE_MIGRATION_SEED,'base64')).toString());

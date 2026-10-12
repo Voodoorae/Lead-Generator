@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {classifyReply,salesDraft,recordReply,submitAlert} from './website-sales.mjs';
+test('interest classification excludes negatives, automated replies and quoted interest',()=>{
+  assert.equal(classifyReply('Yes please, send me the details'),'positive');
+  assert.equal(classifyReply('How much would it cost?'),'positive');
+  assert.equal(classifyReply('Not interested, thanks'),'declined');
+  assert.equal(classifyReply('No thanks, remove us'),'opted_out');
+  assert.equal(classifyReply('Out of office. Please send enquiries to reception'),'automatic');
+  assert.equal(classifyReply('Thanks\nOn Monday wrote:\nYes please'),'review');
+  assert.equal(classifyReply('Thanks<blockquote>Yes please</blockquote>'),'review');
+  assert.equal(classifyReply('Interested but not this year'),'review');
+  assert.equal(classifyReply(undefined),'review');
+});
+test('drafts claim a preview only after verification and never invent commercial terms',()=>{
+  const draft=salesDraft('Example Business');
+  assert(draft.message.includes('prepare a concept'));assert(!/guarantee|free|\u2014|£/.test(draft.message));
+  assert(salesDraft('Example Business',{previewVerified:true}).message.includes('ready to review'));
+});
+test('old or wrongly scoped replies cannot generate alerts; duplicate reply is a no-op',async()=>{
+  const row={id:'website-test',contact_id:'contact-test',last_sent:'2026-10-12T08:00:00Z',qualification:{company:'Example Business'}};
+  const db={async query(sql){return sql.startsWith('INSERT INTO website_reply_events')?{rowCount:0}:{rowCount:1};}};
+  const reply={id:'reply-test',contactId:row.contact_id,direction:'inbound',body:'Yes please',dateAdded:'2026-10-12T08:10:00Z'};
+  assert.equal(await recordReply(db,row,{...reply,dateAdded:'2026-10-11'},'2026-10-12'),false);
+  assert.equal(await recordReply(db,row,reply,'2026-10-12'),false);
+  await assert.rejects(recordReply(db,row,{...reply,contactId:'wrong'},'2026-10-12'),/identity mismatch/);
+});
+test('notification timeout is uncertain and cannot trigger an automatic resend',async()=>{
+  let calls=0;const queries=[];
+  await assert.rejects(submitAlert({async query(sql){queries.push(sql);}},async()=>{calls++;throw Error('timeout');},{id:'alert-test'},{}),/no automatic retry/);
+  assert.equal(calls,1);assert(queries.some(sql=>sql.includes("status='uncertain'")));
+});
+test('a positive reply records the event, draft and single alert in one transaction',async()=>{
+  const calls=[];const db={async query(sql,params){calls.push({sql,params});return {rowCount:1};}};
+  const row={id:'website-test',contact_id:'contact-test',last_sent:'2026-10-12T08:00:00Z',qualification:{company:'Example Business'}};
+  assert.equal(await recordReply(db,row,{id:'reply-test',contactId:row.contact_id,direction:'inbound',body:'Yes please',dateAdded:'2026-10-12T08:15:00Z'},'2026-10-12'),true);
+  assert.equal(calls.filter(c=>c.sql.startsWith('INSERT INTO website_alerts')).length,1);
+  assert.equal(calls.at(-1).sql,'COMMIT');
+  assert(calls.find(c=>c.sql.startsWith('INSERT INTO website_sales')).params[3].includes('prepare a concept'));
+});

@@ -2,7 +2,7 @@
 
 The cloud website routine runs independently of Codex, a desktop browser session and Rachael's computer. The existing separate 10am prospecting routine remains distinct.
 
-Use the existing Frankfurt cron and database. Its new start command is `node server/scripts/run-daily-automations.mjs`. Set the UTC schedule to `0 8,9,10 * * 1-5`: the website routine guards 09:00 Europe/London, and the existing routine guards 10:00. Build with `cd server && npm ci && npx playwright install chromium --only-shell`, using `PLAYWRIGHT_BROWSERS_PATH=0` so the browser is included in the build artifact. The cloud service must pass an actual browser readiness run before cutover.
+Use the existing Frankfurt cron and database. Its new start command is `node server/scripts/run-daily-automations.mjs`. Set the UTC schedule to `*/15 * * * *`: reply monitoring runs every fifteen minutes; the website routine guards weekdays 09:00 Europe/London on the hour, and the existing routine guards weekdays 10:00 on the hour. Build with `cd server && npm ci && npx playwright install chromium --only-shell`, using `PLAYWRIGHT_BROWSERS_PATH=0` so the browser is included in the build artifact. The cloud service must pass an actual browser readiness run before cutover. Serial execution can delay a reply check while a longer discovery run finishes.
 
 The website campaign uses Proxaim <hello@proxaim.com>, up to twenty introductory attempts per UK day and no follow-ups. It shares the 100-email ceiling and conservatively reserves eighty slots for other senders. All reservations, including failures and uncertainty, consume its allowance. The common outreach advisory lock prevents overlap with the existing cloud sender. Existing CRM contacts and other cloud sequence identities are excluded. Send reservations precede contact creation. Ambiguous contact creation or sending never retries automatically.
 
@@ -15,6 +15,7 @@ One-time configuration:
 - WEBSITE_MIGRATION_SEED is private compressed JSON containing existing build data. It never enters the public repository. Existing local preview files and historical evidence remain recoverable.
 - WEBSITE_DASHBOARD_TOKEN protects `/website-generator` on the branch web service. Do not put it in a URL, public source or logs. Opening the portal is optional; the worker does not depend on it.
 - WEBSITE_TEST_DATE and WEBSITE_READINESS_ONLY are temporary verification controls. Clear both before normal scheduling.
+- WEBSITE_ALERT_EMAIL and WEBSITE_ALERT_CONTACT_ID identify the verified existing internal notification recipient. WEBSITE_ALERTS_ENABLED defaults off until a real alert test succeeds. Alerts are reserved once per inbound reply and uncertain notifications never automatically retry. Internal alerts count towards shared capacity. See WEBSITE-SALES.md for the draft-based sales process and activation limits.
 
 The renderer fetches only bounded public HTTPS resources, pins DNS, blocks private addresses, disables original website scripts and never submits forms. It saves desktop/mobile measurements and screenshots. Two concrete findings, corporate identity and a published verified mailbox are needed. Regulated sectors additionally need professional-identity evidence. Missing evidence holds a candidate rather than making up a poor-site claim. Client-rendered pages may remain held by these conservative checks.
 

@@ -23,7 +23,7 @@ test('no claimed preview before QA; no clinical email without professional ident
   assert(copy.message.includes("I've put together"));assert(!copy.message.includes('\u2014'));assert(copy.message.includes('hello@proxaim.com'));
 });
 test('twentieth attempt is allowed, twenty-first and exhausted shared capacity are blocked',async()=>{
-  function dbWith(n){const log=[];return{log,async query(sql){log.push(sql);if(sql.startsWith('SELECT 1'))return{rowCount:0};if(sql.includes('count(*)'))return{rows:[{n}]};return{rows:[],rowCount:1};}};}
+  function dbWith(n){const log=[];return{log,async query(sql){log.push(sql);if(sql.startsWith('SELECT 1'))return{rowCount:0};if(sql.includes('count(*)'))return{rows:[{n:sql.includes('website_alerts')?0:n}]};return{rows:[],rowCount:1};}};}
   const args={id:'key',prospectId:'id',date:'2026-10-12',observedForeign:0,message:{}};
   assert.equal(await reserveWebsite(dbWith(19),args),true);
   assert.equal(await reserveWebsite(dbWith(20),args),false);
