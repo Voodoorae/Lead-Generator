@@ -23,6 +23,12 @@ if (!process.env.GHL_API_TOKEN && !process.env.GHL_LOCATION_ID) {
     const today=londonWindow().date;
     if (process.env.OUTREACH_READINESS_CHECK_DATE===today) console.log(JSON.stringify(await testCloudLedger()));
     if (process.env.OUTREACH_INTERNAL_TEST_DATE===today) console.log(JSON.stringify(await internalReadiness({send:true})));
+    // Explicit, date-limited manual sending retains the ordinary ledger and gates.
+    if(process.env.OUTREACH_MANUAL_SEND_DATE===today) {
+      const reviewDomain=process.env.OUTREACH_MANUAL_REVIEW_DOMAIN;
+      if(!reviewDomain || process.env.OUTREACH_DAILY_LIMIT!=='1' || process.env.OUTREACH_ENABLED!=='true') throw new Error('Manual send requires a target domain, enabled sending and a one-email limit');
+      await runOutreach(today,{reviewDomain});
+    }
     if (process.env.OUTREACH_PREPARE_DATE===today) {
       if (process.env.OUTREACH_ENABLED==='true') throw new Error('Build-time preparation must not send prospect emails');
       await runOutreach(today);

@@ -2,10 +2,10 @@ import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { apiClient, allContacts, emailHistory, emailDetail } from './outreach-api.mjs';
 import { qualifyWebsite } from './website-evidence.mjs';
-import { duplicate, companyKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, outboundCount, campaignLimit } from './outreach-policy.mjs';
+import { duplicate, companyKey, domainKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, outboundCount, campaignLimit } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
-export async function runOutreach(date) {
+export async function runOutreach(date, {reviewDomain=null}={}) {
   if (!process.env.GHL_API_TOKEN || !process.env.GHL_LOCATION_ID) {
     console.log(JSON.stringify({date,status:'outreach-blocked',reason:'crm-not-configured',sent:0})); return;
   }
@@ -79,9 +79,10 @@ export async function runOutreach(date) {
       WHERE run_date >= $1::date - interval '14 days' ORDER BY place_id,run_date DESC) c
       LEFT JOIN prospecting_qualifications q USING(place_id)
       WHERE q.place_id IS NULL OR q.updated_at < now()-interval '3 days' OR ($2 AND q.status='evidence-qualified') OR $3
-      ORDER BY c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date]);
+      ORDER BY c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date || Boolean(reviewDomain)]);
     for (const record of candidates.rows) {
       const score=record.score, identity={company:record.company,website:score.website,email:score.email};
+      if(reviewDomain && domainKey(score.website)!==reviewDomain) continue;
       let result;
       if (duplicate(identity,contacts)) result={hold:'existing-crm-email-domain-or-company'};
       else result=await qualifyWebsite(score,record.company).catch(()=>({hold:'website-evidence-unavailable'}));
@@ -148,3 +149,4 @@ export async function runOutreach(date) {
     db.release(); await pool.end();
   }
 }
+
