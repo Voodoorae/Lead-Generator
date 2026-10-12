@@ -46,4 +46,19 @@ test('retry dates are respected and excessive waits stop', () => {
   assert.throws(() => retryDelay('3600',0,now), /over five minutes/);
   assert.equal(retryDelay('invalid',0,now),30000);
 });
+test('throttle diagnostics capture request IDs without exposing response content', async () => {
+  const logs=[];
+  const body='<html>Render Too Many Requests sensitive@example.com secret-value</html>';
+  await assert.rejects(postLeadJson('https://example.com/api/leads',{}, {
+    fetchImpl:async()=>new Response(body,{status:429,headers:{'rndr-id':'trace-id','cf-mitigated':'challenge'}}),
+    sleep:async()=>{},log:entry=>logs.push(entry),
+  }),/HTTP 429/);
+  const diagnostic=logs.find(entry=>entry.status==='lead-api-error-response');
+  assert.equal(diagnostic.headers['rndr-id'],'trace-id');
+  assert.equal(diagnostic.bodyMentionsRender,true);
+  assert.equal(diagnostic.bodyMentionsRateLimit,true);
+  assert.equal(diagnostic.bodyLooksHtml,true);
+  assert.match(diagnostic.bodySha256,/^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(logs),/sensitive@example.com|secret-value|<html>/);
+});
 
