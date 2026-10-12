@@ -40,6 +40,10 @@ router.post('/sales/:id',async(req,res)=>{
   const client=await db.connect();
   try{
     await client.query('BEGIN');
+    if(['proposal_sent','won'].includes(stage)){
+      const ready=await client.query("SELECT 1 FROM website_prospects p JOIN website_previews v ON v.prospect_id=p.id WHERE p.id=$1 AND p.qualification->>'previewVerified'='true' AND v.html IS NOT NULL AND v.retired_at IS NULL AND EXISTS(SELECT 1 FROM website_sales_history h WHERE h.prospect_id=p.id AND h.stage='preview_review')",[req.params.id]);
+      if(!ready.rowCount){await client.query('ROLLBACK');return res.status(409).send('Show a verified preview and record the completed preview review before a proposal or commitment.');}
+    }
     const saved=await client.query('UPDATE website_sales SET stage=$2,next_action=$3,due_date=CURRENT_DATE,updated_at=now() WHERE prospect_id=$1 RETURNING prospect_id',[req.params.id,stage,actions[stage]]);
     if(!saved.rowCount){await client.query('ROLLBACK');return res.status(404).send('Sales opportunity not found');}
     await client.query('INSERT INTO website_sales_history(prospect_id,stage,evidence) VALUES($1,$2,$3)',[req.params.id,stage,evidence]);

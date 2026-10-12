@@ -38,12 +38,10 @@ export function recipientHold(candidate) {
 export function composeWebsite(candidate) {
   if(recipientHold(candidate)) throw Error('Candidate not qualified');
   const name=String(candidate.company).replace(/[\r\n\u2014]/g,' ').slice(0,150);
-  const clinical=/dent|medical|clinic/i.test(candidate.sector);
-  const action=clinical?'appointment requests':'quote visits or callbacks';
   const opening=candidate.previewVerified?`I've put together a website preview for ${name}, using your existing branding and public business details.`:`I noticed ${candidate.evidence.findings[0]} I could prepare a website concept for ${name}.`;
-  const invitation=candidate.previewVerified?'It shows a clearer route to your services and contact information. Would you like me to show you?':'Would a clearer route to your service enquiries be useful?';
-  const message=`Hello ${name} team,\n\n${opening} ${invitation}\n\nWe could also explore a voice or booking agent to help capture phone enquiries and arrange ${action} when your team is busy, subject to checking how it would fit your current systems.${clinical?' This would cover administrative enquiries and staff handoff only.':''}\n\nBest,\nProxaim\n${WEBSITE_FROM}\n\nIf this is not relevant, reply to let me know and I won't contact you again.`;
-  return {subject:(candidate.previewVerified?'A website preview for ':'Website and enquiry handling for ')+name,message,html:'<div>'+escapeHtml(message).replace(/\n/g,'<br>')+'</div>'};
+  const invitation=candidate.previewVerified?'You can review the design preview before deciding to go ahead. Would you like me to show you?':'You can review a design preview before deciding to go ahead. Would you like me to prepare one?';
+  const message=`Hello ${name} team,\n\n${opening}\n\nWe offer a one-page website build for £299, using your current domain and hosting, with a customer booking-request form. We would check your hosting setup before starting.\n\n${invitation}\n\nBest,\nProxaim\n${WEBSITE_FROM}\n\nIf this is not relevant, reply to let me know and I won't contact you again.`;
+  return {subject:(candidate.previewVerified?'A website preview for ':'A one-page website for ')+name,message,html:'<div>'+escapeHtml(message).replace(/\n/g,'<br>')+'</div>'};
 }
 export function sameBusiness(a,b) {
   return domainKey(a.website)===domainKey(b.website) || Boolean(a.corporate?.companyNumber&&a.corporate.companyNumber===b.corporate?.companyNumber) || companyKey(a.company)===companyKey(b.company);

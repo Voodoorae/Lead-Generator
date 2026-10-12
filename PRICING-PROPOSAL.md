@@ -1,24 +1,29 @@
-# Proposed Proxaim website pricing
+# Proxaim starter website offer
 
-Recommendations for Rachael's approval, not an approved rate card. Do not insert these amounts into automated replies or binding quotes yet. The starter recommendation is a £495 total customer price, including VAT if applicable. Confirm VAT treatment and actual delivery costs before adopting it. Add-ons and recurring services are separate, disclosed charges.
+Rachael confirmed this offer on 12 October 2026. It replaces the earlier £495 recommendation and the £299 plus £200 bundle discussion.
 
-Apply the billion-dollar-board skill's staged offer: a useful, tightly scoped first purchase, followed by relevant extensions and ongoing support. Do not discount a complex project into the starter scope.
+## Standalone £299 build
 
-| Item | Suggested price | Scope |
-|---|---|---|
-| Starter website | £495 once | One responsive page, up to six sections, existing approved logo/images/colours, edited supplied copy, service and contact details, basic page titles/descriptions, one consolidated revision round and launch |
-| Hosting and care | £29/month | Hosting, TLS, routine technical checks and up to 15 minutes of small content changes each month; no accumulated editing allowance or unlimited support |
-| Additional standard page | £95 once | Uses the agreed layout and client-supplied content; specialist functionality quoted separately |
-| Existing booking-link integration | £95 once | Link or embed one supported existing booking calendar, with a tested enquiry/booking path; provider subscriptions extra |
-| Custom booking automation | Quote after discovery | Verify calendar, CRM, availability rules and handoff needs |
-| Managed voice agent | Indicative £295 setup plus £99/month | Only quote after calculating provider, phone and support costs; specify included usage and paid overage rather than unlimited calls |
+One responsive business page using the customer's current domain and hosting, with their approved logo, images, brand colours and service/contact information. Include a customer booking-request form. There is no compulsory hosting subscription, CRM purchase or upgrade bundle.
 
-Starter exclusions: bespoke identity/logo work, new photography, extensive copywriting, multiple service/location pages, ecommerce, custom forms or integrations, advertising, ongoing SEO, and legal/compliance advice. Reusing original assets still requires permission. The website is the customer's deliverable; hosting and optional care are disclosed separately before purchase. Agree export/handoff terms before quoting.
+Check hosting compatibility before accepting the project. Agree content, revision scope, delivery timing and payment terms in the reviewed quote. VAT treatment remains to be confirmed before quoting a final payable total; do not silently add charges to an advertised £299 offer.
 
-Present the starter as a focused business website with clear contact routes. Do not promise revenue, Google rankings or zero missed calls. Position optional agents around verified administrative needs and compatible systems. Medical/dental agents do not provide diagnosis, triage or treatment advice.
+The form requests a booking; it does not confirm availability or reserve a slot unless a working calendar integration is separately agreed. Configure delivery to the customer's approved inbox or existing system, test the complete submission path and show a truthful receipt message. A speculative preview must not imply a live form exists before delivery is verified. For clinical businesses collect only administrative contact/request details, not medical information.
 
-Proposed payment terms: half on approved scope and half before launch, subject to approval. Confirm delivery capacity before giving a launch date. A preview is not a completed paid deliverable.
+## After the page is built and signed off
 
-Validate economics before adopting: £495 less actual delivery labour, provider charges, acquisition time and payment costs must leave sufficient contribution. Track time on the first five paid builds, then adjust scope or pricing. These are recommendations, not measured profit or margin claims.
+Mention optional hosting, CRM, booking agents, voice agents, extra pages and bespoke integrations. Discuss a relevant extension after the starter page is built and signed off, or if the customer explicitly asks earlier. Price additions separately after scoping compatibility and operating costs. No add-on prices are approved. The previously suggested £200 package is not an approved recurring or one-off charge.
 
-Public reference points reviewed on 12 October 2026: Logicsofts advertises one-page websites from £399 plus VAT (https://www.logicsofts.co.uk/one-page-website-design/); KeyDev advertises a £499 starting price (https://www.keydevstudios.co.uk/). Competitor prices are context, not evidence of Proxaim's costs or profitability.
+Apply the billion-dollar-board skill's staged journey: make the first useful purchase easy, deliver it well, then earn permission to discuss the next service. The £299 offer stands alone. Track actual delivery time and expenses rather than assuming profitability.
+
+## Introductory wording
+
+We offer a one-page website build for £299, using your current domain and hosting, with a customer booking-request form. We would check your hosting setup before starting.
+
+Use a verified preview invitation only if the preview passed QA. Otherwise offer to prepare a concept. Keep one clear reply invitation and opt-out instruction. Do not lead with an upgrade menu or promise revenue or an unverified working booking system.
+
+## Scope and delivery documents
+
+STARTER-OFFER.md defines the client-facing scope: up to six sections, eight approved images, 600 supplied words with light editing, one five-field booking-request form and one consolidated revision round. Our errors and defects are corrected outside that allowance. The client supplies approved content/assets, a receiving inbox, privacy/disclosure wording, secure hosting access and one approver. No password requests by email.
+
+The proposed operational target is five UK business days from an agreed ready-to-start date to the completed page for review, plus two UK business days for included revisions and launch after approval. Confirm capacity, compatibility, inputs and actual dates before commitment. This is not a measured or guaranteed turnaround and is not inserted into automated outreach. STARTER-DELIVERY.md defines preview-first review, quote checks, form delivery testing, sign-off, handoff and measurement of the first five paid builds. The private sales dashboard holds proposal/won records until a verified preview and completed preview-review evidence exist.

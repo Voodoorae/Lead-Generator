@@ -4,7 +4,7 @@ Prepared using the billion-dollar-board skill: Hormozi's focus on a useful outco
 
 ## Current activation status
 
-The implementation is local and has not been deployed or verified in Render. No notification or follow-up emails were sent while preparing it. Existing permission remains one introduction per business. Follow-up replies are drafts until Rachael chooses an automatic response policy. Prices, booking links and commercial terms need approved configuration.
+The implementation is local and has not been deployed or verified in Render. No notification or follow-up emails were sent while preparing it. Rachael authorised one introduction per business, one automatic interested-reply acknowledgement inviting a call by reply, and internal interest alerts. Quotes require review. The approved entry offer is a standalone £299 build; VAT treatment, payment terms and project dates must be confirmed in the quote. No add-on rates are approved.
 
 ## Journey and ownership
 
@@ -24,7 +24,7 @@ The implementation is local and has not been deployed or verified in Render. No 
 | Handoff complete | Retire speculative preview; retain customer site and sales history | After handoff | Confirmed delivery and handoff record |
 | Decline or opt-out | Stop the conversation and close the opportunity | Immediately | Actual reply or DND record |
 
-These times are review targets. This implementation sends internal interest alerts only when enabled. It does not send sales replies, calendar bookings, quotes, payment requests or follow-up sequences automatically. The dashboard records completed stages and evidence. Intermediate review dates should be adapted to the prospect's agreed timing.
+These times are review targets. When enabled after cloud verification, the implementation sends internal interest alerts and one automatic acknowledgement inviting a call. It does not automatically book calendars, negotiate, send quotes, request payment or send chase sequences. The dashboard records completed stages and evidence. Intermediate review dates should be adapted to the prospect's agreed timing.
 
 ## First interested reply draft
 
@@ -56,7 +56,7 @@ These are starting drafts. Personalise to the actual conversation and include th
 
 ## Alerts and controls
 
-Configure WEBSITE_ALERT_EMAIL and WEBSITE_ALERT_CONTACT_ID for the verified existing internal recipient, then enable WEBSITE_ALERTS_ENABLED only after an actual cloud test. The proposed recipient is Rachael's Proxaim mailbox, pending her answer. The alert contains a business name, CRM link and next step, not the full message or clinical information. Keyword classification is conservative and can miss or misread interest; ambiguous replies remain in the review queue. It does not assess buying intent with an invented score.
+Configure WEBSITE_ALERT_EMAIL and WEBSITE_ALERT_CONTACT_ID for the verified existing internal recipient, then enable WEBSITE_ALERTS_ENABLED only after an actual cloud test. Rachael confirmed her Proxaim mailbox as the recipient; the address is stored privately. The alert contains a business name, CRM link and next step, not the full message or clinical information. Keyword classification is conservative and can miss or misread interest; ambiguous replies remain in the review queue. It does not assess buying intent with an invented score.
 
 A permanent reply identity prevents duplicate processing. Alert reservations occur before the provider call. Uncertain sends are never retried automatically and require reconciliation. Provider acceptance is not proof of delivery. Internal alerts consume shared email capacity and can be held when capacity or prerequisites cannot be verified. Reserved and uncertain alerts are shown in the private dashboard and require review.
 
@@ -65,3 +65,11 @@ The cloud worker and dashboard preserve the separate campaign and stop duplicate
 ## Decisions confirmed on 12 October 2026
 
 Rachael approved alerts to her verified Proxaim mailbox, calls arranged by email reply, one automatic acknowledgement of explicit interest inviting a call, and quotes drafted for her review. No cold chase emails, negotiation, prices, calendar commitments or automatic quotes are authorised. Set WEBSITE_ACKNOWLEDGEMENTS_ENABLED only after live cloud readiness. The implementation reserves one acknowledgement per business, refreshes the latest reply and suppression, skips conversations already answered by a human or another campaign, and holds uncertain sends permanently for reconciliation. Shared capacity includes introductions, acknowledgements and internal alerts. PRICING-PROPOSAL.md is a recommendation awaiting approval, not a rate card.
+
+## Starter offer confirmed on 12 October 2026
+
+The current offer is a standalone £299 one-page build on the customer's existing domain and hosting, including a customer booking-request form. Hosting and CRM are optional. Introductions focus on this offer and a verified preview or truthful concept invitation. Optional hosting, CRM, voice/booking agents and bespoke extensions are discussed after the page is built and signed off, unless the customer asks earlier. This supersedes earlier recommendations to introduce agent upgrades during discovery. Check hosting compatibility and test form delivery before handoff. A request is not a confirmed calendar booking. No add-on prices are approved. Quotes still require review, and cloud activation is still pending. The automatic interest acknowledgement discusses starter requirements, without pitching upgrades.
+
+## Preview before commitment and starter delivery
+
+The current scope and client input list are in STARTER-OFFER.md, with the operating checks in STARTER-DELIVERY.md. Show the verified design preview before asking for acceptance or payment. Record completed preview-review evidence before proposal or won stages. Explain that the preview form is not live until deployed and tested. Calls remain optional arrangements by reply. The delivery target is provisional: confirm actual dates and capacity rather than claiming a proven turnaround. Agent/CRM/hosting offers follow completed-page sign-off unless the customer asks earlier.

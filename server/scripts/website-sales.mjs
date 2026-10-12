@@ -24,7 +24,7 @@ export function salesDraft(company,{previewVerified=false}={}) {
 }
 
 export function interestAcknowledgement() {
-  const message='Hello,\n\nThank you for your interest. A short call would help us understand what you want from the website and discuss any questions or optional booking features.\n\nPlease reply with a suitable time for a call. We will confirm availability by email.\n\nProxaim\nhello@proxaim.com\n\nIf you would prefer us to stop contacting you, please reply to let us know.';
+  const message='Hello,\n\nThank you for your interest. A short call would help us understand what you want from your one-page website and check your current hosting and customer booking-request form requirements.\n\nPlease reply with a suitable time for a call. We will confirm availability by email.\n\nProxaim\nhello@proxaim.com\n\nIf you would prefer us to stop contacting you, please reply to let us know.';
   return {subject:'Your website enquiry',message,html:message.split('\n\n').map(p=>`<p>${escapeHtml(p).replace(/\n/g,'<br>')}</p>`).join('')};
 }
 
