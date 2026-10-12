@@ -3,10 +3,10 @@ import { apiClient, emailHistory, emailDetail } from './outreach-api.mjs';
 import { londonWindow } from './prospecting-policy.mjs';
 import { verifiedEmail, emailKey, outboundCount, suppressionReason, isReadinessReply } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
-const key='cloud-internal-test-v1';
-export async function internalReadiness({send=false}={}) {
+export async function internalReadiness({send=false,senderOnly=false}={}) {
+  const key=senderOnly?'cloud-sender-probe-v2':'cloud-internal-test-v1';
   const date=londonWindow().date;
-  if (send && process.env.OUTREACH_INTERNAL_TEST_DATE!==date) throw new Error('Internal test requires current UK date');
+  if (send && (senderOnly?process.env.OUTREACH_SENDER_TEST_DATE:process.env.OUTREACH_INTERNAL_TEST_DATE)!==date) throw new Error('Internal test requires current UK date');
   const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL}),db=await pool.connect();
   try {
@@ -31,12 +31,12 @@ export async function internalReadiness({send=false}={}) {
         const validation=await api('POST','/email/verify',{body:{type:'email',verify:contact.email},version:'v3'});
         if (!verifiedEmail(validation,contact.email)) throw new Error('Internal email validation failed');
         await api('POST','/contacts/'+contact.id+'/tags',{body:{tags:['proxaim-cloud-internal-test']}});
-        const copy='Hello Rachael,\n\nThis is the cloud sending readiness test from Steven. It was submitted from the Render deployment using the CRM connection.\n\nPlease reply with: Ready cloud-internal-test-v1\n\nThat lets us verify reply handling before prospect sending is enabled.\n\nThe funnel link to check is https://proxaim.com/check\n\nSteven Nisbet\nProxaim';
+        const copy=senderOnly?'Hello Rachael,\n\nThis checks the newly approved sender: Steven Nisbet <hello@proxaim.com>. No reply is needed. Your earlier readiness reply remains verified.\n\nSteven Nisbet\nProxaim':'Hello Rachael,\n\nThis is the cloud sending readiness test from Steven. It was submitted from the Render deployment using the CRM connection.\n\nPlease reply with: Ready cloud-internal-test-v1\n\nThat lets us verify reply handling before prospect sending is enabled.\n\nThe funnel link to check is https://proxaim.com/check\n\nSteven Nisbet\nProxaim';
         emailSubmitted=true;
         const result=await submitOnce(db,api,key,{type:'Email',contactId:contact.id,emailFrom:process.env.GHL_EMAIL_FROM,
-          subject:'Proxaim cloud readiness test',message:copy,html:copy.replace(/\n/g,'<br>')});
+          subject:senderOnly?'Proxaim sender confirmation':'Proxaim cloud readiness test',message:copy,html:copy.replace(/\n/g,'<br>')});
         await db.query(`INSERT INTO prospecting_readiness(test_key,status,detail) VALUES($1,'accepted',$2)
-          ON CONFLICT(test_key) DO UPDATE SET status='accepted',detail=EXCLUDED.detail,updated_at=now()`,[key,JSON.stringify({validation:'deliverable-low-risk',contactWrite:'tag-added',messageId:result.messageId,emailMessageId:result.emailMessageId})]);
+          ON CONFLICT(test_key) DO UPDATE SET status='accepted',detail=EXCLUDED.detail,updated_at=now()`,[key,JSON.stringify({validation:'deliverable-low-risk',contactWrite:'tag-added',requestedSender:process.env.GHL_EMAIL_FROM,messageId:result.messageId,emailMessageId:result.emailMessageId})]);
       } catch(error) {
         await db.query(`INSERT INTO prospecting_readiness(test_key,status,detail) VALUES($1,'failed',$2)
           ON CONFLICT(test_key) DO UPDATE SET status='failed',detail=EXCLUDED.detail,updated_at=now()`,[key,JSON.stringify({reason:error.message,emailSubmitted})]);
@@ -52,11 +52,15 @@ export async function internalReadiness({send=false}={}) {
     const replies=history.filter(m=>m.direction==='inbound' && m.contactId===process.env.GHL_PROBE_CONTACT_ID
       && new Date(m.dateAdded)>=new Date(attempt.created_at) && isReadinessReply(m.body));
     const stopped=suppressionReason({},replies)==='reply-received';
-    const senderVerified=Boolean(sent?.emailFrom?.includes('Steven Nisbet') && sent.emailFrom.includes(process.env.GHL_EMAIL_FROM));
+    // Changing the sender does not invalidate an already observed historical reply test.
+    const historicalSender=!senderOnly && prior?.status==='delivered-and-reply-verified' && prior.detail?.senderVerified===true && prior.detail?.replyStopVerified===true;
+    const senderVerified=Boolean(sent?.emailFrom?.includes('Steven Nisbet') && (historicalSender || sent.emailFrom.includes(prior?.detail?.requestedSender || process.env.GHL_EMAIL_FROM)));
     if(sent && !senderVerified) throw new Error('Internal sender identity mismatch');
-    const status=stopped?'delivered-and-reply-verified':sent?.status==='delivered' || sent?.status==='opened' || sent?.status==='read'?'delivered-awaiting-reply':'accepted-awaiting-delivery';
+    const delivered=['delivered','opened','read'].includes(sent?.status);
+    const status=senderOnly?delivered && senderVerified?'sender-verified':'accepted-awaiting-delivery':stopped?'delivered-and-reply-verified':delivered?'delivered-awaiting-reply':'accepted-awaiting-delivery';
     await db.query('UPDATE prospecting_readiness SET status=$2,detail=detail || $3::jsonb,updated_at=now() WHERE test_key=$1',
       [key,status,JSON.stringify({deliveryStatus:sent?.status || 'not-yet-observed',senderVerified,replyStopVerified:stopped})]);
     return {status,contactWriteTested:true,emailValidationTested:true,senderVerified,replyStopVerified:stopped,sent:0};
   } finally { db.release(); await pool.end(); }
 }
+
