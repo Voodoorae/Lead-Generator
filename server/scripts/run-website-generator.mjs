@@ -115,7 +115,11 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         const clinical=/dent|medical|clinic/i.test(input.sector);
         // Release Chromium between businesses to bound the cron's memory use.
         browser=await openWebsiteBrowser();
-        const inspection=await inspectWebsite(browser,input.website,{clinical});
+        let reviewTimer;
+        const inspection=await Promise.race([
+          inspectWebsite(browser,input.website,{clinical}),
+          new Promise((_,reject)=>{reviewTimer=setTimeout(()=>reject(Error('Website review exceeded two minutes; qualification held')),120000);})
+        ]).finally(()=>clearTimeout(reviewTimer));
         await browser.close();browser=null;
         const services=pageText(inspection.source.html);
         const sectorPattern=/accountant/i.test(input.sector)?/account|bookkeep|payroll/i:/survey/i.test(input.sector)?/survey|dilapidation|quantity|valuation/i:/roof/i.test(input.sector)?/roof|re-roof|reroof/i:/heating/i.test(input.sector)?/boiler|heat pump|heating installation/i:/dent/i.test(input.sector)?/dental|dentist|implant|orthodont/i:/medical|clinic/i.test(input.sector)?/private gp|medical|consultation|diagnostic/i:/electrical|electrician/i;
