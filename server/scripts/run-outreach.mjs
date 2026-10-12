@@ -5,7 +5,8 @@ import { qualifyWebsite } from './website-evidence.mjs';
 import { duplicate, companyKey, domainKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, outboundCount, campaignLimit } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
-export async function runOutreach(date, {reviewDomain=null}={}) {
+export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=null}={}) {
+  if(reviewedCandidate && (!reviewDomain || reviewedCandidate.domain!==reviewDomain || reviewedCandidate.evidence?.checkedAt?.slice(0,10)!==date)) throw new Error('Manual evidence must match the target and today');
   if (!process.env.GHL_API_TOKEN || !process.env.GHL_LOCATION_ID) {
     console.log(JSON.stringify({date,status:'outreach-blocked',reason:'crm-not-configured',sent:0})); return;
   }
@@ -85,7 +86,7 @@ export async function runOutreach(date, {reviewDomain=null}={}) {
       if(reviewDomain && domainKey(score.website)!==reviewDomain) continue;
       let result;
       if (duplicate(identity,contacts)) result={hold:'existing-crm-email-domain-or-company'};
-      else result=await qualifyWebsite(score,record.company).catch(()=>({hold:'website-evidence-unavailable'}));
+      else result=reviewedCandidate ? {candidate:structuredClone(reviewedCandidate)} : await qualifyWebsite(score,record.company).catch(()=>({hold:'website-evidence-unavailable'}));
       const candidate=result.candidate;
       if (candidate && enabled && accepted<limit) {
         candidate.validation=await api('POST','/email/verify',{body:{type:'email',verify:candidate.email},version:'v3'});
