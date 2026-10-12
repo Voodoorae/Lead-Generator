@@ -19,7 +19,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
   if(!process.env.DATABASE_URL)throw Error('Persistent database required');
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL});const db=await pool.connect();
   const summary={date:window.date,status:'running',found:0,qualified:0,previewed:0,accepted:0,confirmedDelivered:0,held:0,skipped:0,retired:0,errors:[]};
-  let browser,owns=false;
+  let browser,owns=false,runStarted=false;
   const enabled=process.env.WEBSITE_OUTREACH_ENABLED==='true';
   try {
     owns=(await db.query('SELECT pg_try_advisory_lock($1) acquired',[7101027])).rows[0].acquired;
@@ -36,8 +36,9 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
       }
     }
     const prior=(await db.query('SELECT status FROM website_runs WHERE run_date=$1',[window.date])).rows[0];
-    if(['complete','complete-with-holds'].includes(prior?.status)&&!readinessOnly)return {status:'already-completed',sent:0};
+    if(['complete','complete-with-holds'].includes(prior?.status)&&!readinessOnly&&!force)return {status:'already-completed',sent:0};
     await db.query(`INSERT INTO website_runs(run_date,status) VALUES($1,'running') ON CONFLICT(run_date) DO UPDATE SET status='running',updated_at=now()`,[window.date]);
+    runStarted=true;
     if(!process.env.GHL_API_TOKEN||!process.env.GHL_LOCATION_ID)throw Error('CRM API credentials required');
     const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
     const contacts=await allContacts(api);
@@ -177,7 +178,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
   }catch(error){summary.status='failed';summary.errors.push(error.message);throw error;}
   finally {
     if(browser)await browser.close().catch(()=>{});
-    if(owns){await db.query('UPDATE website_runs SET status=$2,summary=$3,updated_at=now() WHERE run_date=$1',[window.date,summary.status,JSON.stringify(summary)]).catch(()=>{});await db.query('SELECT pg_advisory_unlock($1)',[7101027]).catch(()=>{});}
+    if(owns){if(runStarted)await db.query('UPDATE website_runs SET status=$2,summary=$3,updated_at=now() WHERE run_date=$1',[window.date,summary.status,JSON.stringify(summary)]).catch(()=>{});await db.query('SELECT pg_advisory_unlock($1)',[7101027]).catch(()=>{});}
     db.release();await pool.end();console.log(JSON.stringify({campaign:'website-generator',...summary}));
   }
 }
