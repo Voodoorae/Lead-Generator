@@ -95,7 +95,7 @@ export async function sendInterestAcknowledgements(db,api,date) {
     const copy=interestAcknowledgement();
     const sent=await submitAcknowledgement(db,api,candidate.id,{type:'Email',contactId:candidate.contact_id,emailFrom:WEBSITE_FROM,emailTo:candidate.email,subject:copy.subject,html:copy.html});accepted++;
     const actual=await proxaimEmailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:candidate.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID);
-    if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Accepted acknowledgement sender mismatch; reconcile');
+    if(!/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Accepted acknowledgement sender mismatch; reconcile');
   }
   return accepted;
 }
@@ -137,7 +137,7 @@ export async function notificationTest(db,api,date) {
   }
   if(record.status==='accepted') {
     const actual=await proxaimEmailDetail(api,{id:record.emailMessageId||record.messageId,contactId:record.contactId,direction:'outbound'},process.env.GHL_LOCATION_ID);
-    if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Internal cloud test sender mismatch');
+    if(!/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Internal cloud test sender mismatch');
     record={...record,observedStatus:actual.status,actualFrom:actual.emailFrom};
     await db.query('UPDATE website_controls SET value=$2,updated_at=now() WHERE key=$1',[key,JSON.stringify(record)]);
   }
@@ -194,7 +194,7 @@ export async function runWebsiteReplies() {
       const html=`<p>${escapeHtml(company)} has sent a reply matching an interest signal. Please review the actual reply before making a commitment.</p><p><a href="${escapeHtml(crm)}">Open the contact in CRM</a></p><p>A tailored reply draft is saved in the private generator dashboard. Suggested next step: confirm their priority service and arrange a short discovery call.</p><p>Proxaim</p>`;
       const sent=await submitAlert(db,api,alert,{type:'Email',contactId,emailTo:recipient,emailFrom:WEBSITE_FROM,subject:'Website enquiry: '+company,html});summary.alertsAccepted++;
       const actual=await proxaimEmailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId,direction:'outbound'},process.env.GHL_LOCATION_ID);
-      if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Accepted notification sender mismatch; reconcile before continuing');
+      if(!/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Accepted notification sender mismatch; reconcile before continuing');
     }
     return summary;
   }finally{if(owns)await db.query('SELECT pg_advisory_unlock($1)',[7101027]).catch(()=>{});db.release();await pool.end();}

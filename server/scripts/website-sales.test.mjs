@@ -58,7 +58,7 @@ test('dated internal probe sends only once and reconciles the actual provider re
     if(path.startsWith('/contacts/'))return{contact:{id:'test-contact',locationId:'test-location',email:config.WEBSITE_ALERT_EMAIL}};
     if(path.endsWith('/export'))return{messages:[],total:0};
     if(method==='POST'){sends++;assert(body.html.includes('No prospect has replied'));return{emailMessageId:'test-provider-id'};}
-    return{emailMessage:{contactId:'test-contact',locationId:'test-location',direction:'outbound',status:'delivered',from:'Proxaim <hello@proxaim.com>'}};
+    return{emailMessage:{contactId:'test-contact',locationId:'test-location',direction:'outbound',status:'delivered',from:'Steven Nisbet <hello@proxaim.com>'}};
   };
   assert.equal((await notificationTest(db,api,'2026-10-12')).observedStatus,'delivered');
   await notificationTest(db,api,'2026-10-12');assert.equal(sends,1);

@@ -152,7 +152,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         await db.query("UPDATE website_prospects SET status='awaiting_reply',last_sent=now(),hold_reason=NULL,updated_at=now() WHERE id=$1",[candidate.id]);summary.accepted++;
         try {
           const actual=await proxaimEmailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:contact.id,direction:'outbound'},process.env.GHL_LOCATION_ID);
-          if(!/^Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Actual sender differs from Proxaim');
+          if(!/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Actual sender differs from Proxaim');
           if(['delivered','opened','read'].includes(actual.status))summary.confirmedDelivered++;
         }catch{senderClear=false;summary.errors.push('accepted-email-sender-or-delivery-check-needs-reconciliation');}
       }catch(error){summary.held++;summary.errors.push(error.message.replace(/https?:\/\/\S+/g,'[website]').slice(0,160));}

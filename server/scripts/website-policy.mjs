@@ -4,7 +4,7 @@ export const WEBSITE_LIMIT = 20;
 export const SHARED_LIMIT = 100;
 export const WEBSITE_FROM = 'hello@proxaim.com';
 export function websiteSenderVerified(email) {
-  return ['delivered','opened','read','clicked'].includes(email.status)&&/^Proxaim\s*<hello@proxaim\.com>$/i.test(email.emailFrom);
+  return ['delivered','opened','read','clicked'].includes(email.status)&&/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(email.emailFrom);
 }
 export function websiteWindow(now = new Date()) {
   const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',hourCycle:'h23'}).formatToParts(now).map(p=>[p.type,p.value]));

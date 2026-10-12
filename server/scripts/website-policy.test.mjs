@@ -16,9 +16,10 @@ test('findings reflect actual links/measurements; complete good pages do not qua
 });
 const candidate={company:'Synthetic Co',website:'https://example.invalid',domain:'example.invalid',email:'info@example.invalid',emailSourceUrl:'https://example.invalid/contact',sector:'commercial electricians',corporate:{verified:true},evidence:{findings:['An observed test finding.','Another observed test finding.'],desktop:true,mobile:true}};
 test('a clicked internal proof remains valid only with the actual Proxaim sender',()=>{
-  assert(websiteSenderVerified({status:'clicked',emailFrom:'Proxaim <hello@proxaim.com>'}));
-  assert(!websiteSenderVerified({status:'accepted',emailFrom:'Proxaim <hello@proxaim.com>'}));
+  assert(websiteSenderVerified({status:'clicked',emailFrom:'Steven Nisbet <hello@proxaim.com>'}));
+  assert(!websiteSenderVerified({status:'accepted',emailFrom:'Steven Nisbet <hello@proxaim.com>'}));
   assert(!websiteSenderVerified({status:'clicked',emailFrom:'Other <other@example.invalid>'}));
+  assert(!websiteSenderVerified({status:'delivered',emailFrom:'Proxaim <hello@proxaim.com>'}));
 });
 test('no claimed preview before QA; no clinical email without professional identity',()=>{
   assert.equal(recipientHold(candidate),null);
