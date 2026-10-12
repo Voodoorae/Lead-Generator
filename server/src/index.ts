@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import leadsRouter from "./routes/leads.js";
 import healthRouter from "./routes/health.js";
+import websiteGeneratorRouter from "./routes/website-generator.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +24,7 @@ app.use((req, res, next) => {
 // /api/healthz silently returns the React page instead of JSON.
 app.use("/api", healthRouter);
 app.use("/api", leadsRouter);
+app.use("/website-generator", websiteGeneratorRouter);
 
 // Serve built React frontend
 const distPath = path.join(__dirname, "../../client/dist");

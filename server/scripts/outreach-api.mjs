@@ -6,7 +6,7 @@ export function apiClient({ token, locationId, fetchImpl = fetch, sleep = ms=>ne
     const contactRead = /^\/contacts\/[A-Za-z0-9_-]+$/.test(path);
     const tagsWrite = /^\/contacts\/[A-Za-z0-9_-]+\/tags$/.test(path);
     const messageRead = /^\/conversations\/messages\/(?:email\/)?[A-Za-z0-9_-]+$/.test(path);
-    const allowed = method === 'GET' ? contactRead || messageRead || ['/conversations/messages/export','/conversations/search'].includes(path)
+    const allowed = method === 'GET' ? contactRead || messageRead || ['/conversations/messages/export','/conversations/search','/workflows/'].includes(path)
       : method === 'POST' && (tagsWrite || ['/contacts/search','/contacts/','/email/verify','/conversations/messages'].includes(path));
     if (!allowed) throw new Error('CRM operation not allowed');
     const url = new URL(path, BASE);
