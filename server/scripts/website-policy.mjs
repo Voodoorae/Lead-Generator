@@ -7,7 +7,7 @@ export function websiteSectorAllowed(sector,date) {
   return !/accountant/i.test(sector)||sector==='accountants-existing-build-exception'&&date==='2026-10-12';
 }
 export function websiteSenderVerified(email) {
-  return ['delivered','opened','read','clicked'].includes(email.status)&&/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(email.emailFrom);
+  return ['delivered','opened','read','clicked'].includes(email.status)&&/^Rae @ Proxaim\s*<hello@proxaim\.com>$/i.test(email.emailFrom);
 }
 export function websiteWindow(now = new Date()) {
   const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',hourCycle:'h23'}).formatToParts(now).map(p=>[p.type,p.value]));
@@ -21,6 +21,15 @@ export function websiteSearches(date) {
   return [0,1].map(offset=>({niche:niches[(n+offset)%niches.length],location:cities[Math.floor(n/niches.length)%cities.length]+', Scotland'}));
 }
 export const escapeHtml = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function advertisedService(sector,text) {
+  const rules=/survey/i.test(sector)?[/\b(?:building|quantity|residential|commercial) surveying\b/i,/\bsurveys?\b/i,/\bvaluations?\b/i]
+    :/roof/i.test(sector)?[/\broof(?:ing| repairs?| installations?)\b/i]
+    :/heating/i.test(sector)?[/\bheat pumps?\b/i,/\bboiler(?: installations?| repairs?)?\b/i,/\bheating installation\b/i]
+    :/dent/i.test(sector)?[/\bdental implants?\b/i,/\borthodontics?\b/i,/\bdental (?:care|treatments?|services)\b/i]
+    :/medical|clinic/i.test(sector)?[/\bprivate GP\b/i,/\b(?:specialist|medical) consultations?\b/i,/\bdiagnostic(?:s| services)?\b/i]
+    :/electric/i.test(sector)?[/\b(?:commercial|domestic) electrical(?: services| installations?)?\b/i,/\belectrical installations?\b/i]:[];
+  return rules.map(rule=>text.match(rule)?.[0]).find(Boolean)||null;
+}
 export function websiteFindings(desktop,mobile) {
   const findings=[];
   if(mobile.scrollWidth-mobile.width>40) findings.push(`At a ${mobile.width}px mobile viewport, the page measured ${mobile.scrollWidth}px wide, requiring horizontal scrolling.`);
@@ -36,15 +45,18 @@ export function recipientHold(candidate) {
   if(!candidate.corporate?.verified) return 'active-company-and-trading-identity-unverified';
   if(!candidate.email || domainKey(candidate.email.split('@')[1])!==domainKey(candidate.website)) return 'business-domain-email-unverified';
   if(!candidate.emailSourceUrl) return 'published-email-unverified';
-  if(/survey|dent|medical|clinic/i.test(candidate.sector)&&!candidate.professional?.verified) return 'professional-identity-unverified';
-  if(!candidate.evidence?.findings || candidate.evidence.findings.length<2) return 'two-current-website-findings-required';
-  if(!candidate.evidence.desktop || !candidate.evidence.mobile) return 'desktop-and-mobile-evidence-required';
+  const evidence=candidate.evidence;
+  if(!evidence?.sourceUrl||!Number.isFinite(Date.parse(evidence.checkedAt))) return 'current-service-or-issue-evidence-required';
+  const issue=evidence.findings?.length>0&&evidence.desktop&&evidence.mobile;
+  const service=evidence.offerService&&evidence.serviceSourceUrl===evidence.sourceUrl&&advertisedService(candidate.sector,evidence.serviceExcerpt||'')===evidence.offerService;
+  if(!issue&&!service) return 'current-service-or-issue-evidence-required';
   return null;
 }
 export function composeWebsite(candidate) {
   if(recipientHold(candidate)) throw Error('Candidate not qualified');
   const name=String(candidate.company).replace(/[\r\n\u2014]/g,' ').slice(0,150);
-  const opening=candidate.previewVerified?`I've put together a website preview for ${name}, using your existing branding.`:`I noticed ${candidate.evidence.findings[0]}`;
+  const issueVerified=candidate.evidence.findings?.length&&candidate.evidence.desktop&&candidate.evidence.mobile;
+  const opening=candidate.previewVerified?`I've put together a website preview for ${name}, using your existing branding.`:issueVerified?`I noticed ${candidate.evidence.findings[0]}`:`I saw that ${name} advertises ${candidate.evidence.offerService}. I build focused pages for customer enquiries.`;
   const invitation=candidate.previewVerified?'Would you like to see the preview before deciding?':'Would you like me to prepare a preview before you decide?';
   const message=`Hello ${name} team,\n\n${opening}\n\nA one-page build is £299 on your existing domain and hosting, including a customer booking-request form.\n\n${invitation}\n\nProxaim\n${WEBSITE_FROM}\n\nIf this isn't relevant, reply and I'll stop contacting you.`;
   return {subject:(candidate.previewVerified?'A website preview for ':'A one-page website for ')+name,message,html:'<div>'+escapeHtml(message).replace(/\n/g,'<br>')+'</div>'};

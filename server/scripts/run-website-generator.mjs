@@ -6,9 +6,9 @@ import { companyKey,domainKey,duplicate,suppressionReason,verifiedEmail,outbound
 import { postLeadJson } from './lead-api.mjs';
 import { ensureWebsite,reserveWebsite,submitWebsite,retireWebsite } from './website-store.mjs';
 import { ensureOutreach } from './outreach-store.mjs';
-import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM,websiteSenderVerified,websiteSectorAllowed } from './website-policy.mjs';
-import { openWebsiteBrowser,inspectWebsite,corporateWebsite,buildWebsite,verifyPreview,publicResource } from './website-browser.mjs';
-import { pageText } from './website-evidence.mjs';
+import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM,websiteSenderVerified,websiteSectorAllowed,advertisedService } from './website-policy.mjs';
+import { openWebsiteBrowser,corporateWebsite,verifyPreview } from './website-browser.mjs';
+import { pageText,readPublicPage } from './website-evidence.mjs';
 import { ensureSales } from './website-sales.mjs';
 
 export const workflowSignature = workflows => createHash('sha256').update(JSON.stringify(workflows.filter(w=>w.status==='published').map(w=>({id:w.id,updatedAt:w.updatedAt,version:w.version})).sort((a,b)=>a.id.localeCompare(b.id)))).digest('hex');
@@ -82,10 +82,11 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
       const retirement=retireDecision({outcome,lastSent:row.last_sent,hasReply:replies.length>0});
       if(retirement&&await retireWebsite(db,row.id,retirement))summary.retired++;
     }
-    browser=await openWebsiteBrowser();
-    await verifyPreview(browser,'<!doctype html><meta name="viewport" content="width=device-width"><a href="mailto:hello@proxaim.com">Synthetic browser readiness</a>','hello@proxaim.com');
-    if(readinessOnly) {summary.status='readiness-checked';return summary;}
-    await browser.close();browser=null;
+    if(readinessOnly) {
+      browser=await openWebsiteBrowser();
+      await verifyPreview(browser,'<!doctype html><meta name="viewport" content="width=device-width"><a href="mailto:hello@proxaim.com">Synthetic browser readiness</a>','hello@proxaim.com');
+      summary.status='readiness-checked';return summary;
+    }
     const leadApi=new URL(process.env.LEAD_GENERATOR_URL||'https://lead-generator-1-vx3v.onrender.com');
     if(leadApi.protocol!=='https:')throw Error('Discovery API must use HTTPS');
     // Resume imported/persisted research first. CRM identities stay immutable.
@@ -117,33 +118,22 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
       if((await db.query('SELECT 1 FROM prospecting_sequences WHERE domain=$1 OR company_key=$2',[domain,companyKey(input.company)])).rowCount){summary.skipped++;continue;}
       try {
         if(!/\b(?:Edinburgh|Glasgow|Aberdeen|Dundee|Stirling|Inverness|Perth|Scotland|Fife|Lothian|Ayr|Kilmarnock|Bathgate|Broxburn|Blackford|Lochgelly|West Calder)\b/i.test(input.address||''))throw Error('Scottish business address unverified');
-        const clinical=/dent|medical|clinic/i.test(input.sector);
-        // Release Chromium between businesses to bound the cron's memory use.
-        browser=await openWebsiteBrowser();
-        let reviewTimer;
-        const inspection=await Promise.race([
-          inspectWebsite(browser,input.website,{clinical}),
-          new Promise((_,reject)=>{reviewTimer=setTimeout(()=>reject(Error('Website review exceeded two minutes; qualification held')),120000);})
-        ]).finally(()=>clearTimeout(reviewTimer));
-        await browser.close();browser=null;
-        const services=pageText(inspection.source.html);
-        const sectorPattern=/accountant/i.test(input.sector)?/account|bookkeep|payroll/i:/survey/i.test(input.sector)?/survey|dilapidation|quantity|valuation/i:/roof/i.test(input.sector)?/roof|re-roof|reroof/i:/heating/i.test(input.sector)?/boiler|heat pump|heating installation/i:/dent/i.test(input.sector)?/dental|dentist|implant|orthodont/i:/medical|clinic/i.test(input.sector)?/private gp|medical|consultation|diagnostic/i:/electrical|electrician/i;
-        if(!sectorPattern.test(services))throw Error('Advertised services do not verify the selected sector');
-        const corporate=await corporateWebsite(inspection.source,input.company,input.address);
-        const candidate={...input,...corporate,domain,website:inspection.source.url,evidence:{findings:inspection.findings,desktop:true,mobile:true,sourceUrl:inspection.source.url,checkedAt:new Date().toISOString(),sha256:createHash('sha256').update(inspection.source.html).digest('hex')},previewVerified:false};
+        // First contact proposes a concept. Browser QA and brand assets belong to the later build.
+        const sourceUrl=new URL(input.website);
+        if(sourceUrl.protocol==='http:')sourceUrl.protocol='https:';
+        const source=await readPublicPage(sourceUrl.href,domain);
+        if(!/<\/body\s*>/i.test(source.html)||/<title[^>]*>\s*(?:Just a moment|Attention Required|Access Denied|Robot Check)\b/i.test(source.html))throw Error('Complete business page unavailable');
+        const services=pageText(source.html.replace(/<!--[\s\S]*?-->/g,''));
+        const offerService=advertisedService(input.sector,services);
+        if(!offerService)throw Error('Advertised services do not verify the selected sector');
+        const servicePosition=services.indexOf(offerService);
+        const corporate=await corporateWebsite(source,input.company,input.address);
+        const candidate={...input,...corporate,domain,website:source.url,evidence:{findings:[],sourceUrl:source.url,serviceSourceUrl:source.url,offerService,serviceExcerpt:services.slice(Math.max(0,servicePosition-80),servicePosition+offerService.length+120),checkedAt:new Date().toISOString(),sha256:createHash('sha256').update(source.html).digest('hex')},previewVerified:false};
         if(duplicate(candidate,contacts)||duplicate({...candidate,company:candidate.corporate.legalName},contacts)){summary.skipped++;continue;}
         const hold=recipientHold(candidate);
         await db.query(`INSERT INTO website_prospects(id,domain,email,company_key,sector,qualification,status,hold_reason) VALUES($1,$2,$3,$4,$5,$6,'held',$7) ON CONFLICT(domain) DO UPDATE SET qualification=EXCLUDED.qualification,email=EXCLUDED.email,hold_reason=EXCLUDED.hold_reason,updated_at=now()`,[candidate.id,domain,candidate.email,companyKey(candidate.company),candidate.sector,JSON.stringify(candidate),hold]);
         if(hold){summary.held++;continue;}
         summary.qualified++;
-        if(!inspection.desktop.logo&&!inspection.desktop.accent)throw Error('Original branding not verified; concept held');
-        for(const asset of [inspection.desktop.logo,inspection.desktop.photo].filter(Boolean)) {const result=await publicResource(asset);if(!result.contentType.startsWith('image/'))throw Error('Original image unavailable; concept held');}
-        const preview=buildWebsite(candidate,inspection);
-        browser=await openWebsiteBrowser();
-        await verifyPreview(browser,preview.html,candidate.email);candidate.previewVerified=true;
-        await browser.close();browser=null;
-        await db.query(`INSERT INTO website_previews(prospect_id,html,desktop,mobile,manifest) VALUES($1,$2,$3,$4,$5) ON CONFLICT(prospect_id) DO UPDATE SET html=EXCLUDED.html,desktop=EXCLUDED.desktop,mobile=EXCLUDED.mobile,manifest=EXCLUDED.manifest`,[candidate.id,Buffer.from(preview.html),inspection.desktop.screenshot,inspection.mobile.screenshot,JSON.stringify(preview.manifest)]);
-        summary.previewed++;
         const copy=composeWebsite(candidate);
         await db.query("UPDATE website_prospects SET qualification=$2,hold_reason=$3 WHERE id=$1",[candidate.id,JSON.stringify({...candidate,draft:copy}),!enabled?'outreach-disabled':!workflowClear?'workflow-clearance-required':!senderClear?'sender-verification-required':'ready-for-final-checks']);
         if(!enabled||!workflowClear||!senderClear){summary.held++;continue;}
@@ -151,12 +141,12 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         const freshContacts=await allContacts(api);
         if(duplicate(candidate,freshContacts)||duplicate({...candidate,company:candidate.corporate.legalName},freshContacts)){summary.skipped++;continue;}
         const validation=await api('POST','/email/verify',{body:{type:'email',verify:candidate.email},version:'v3'});
-        if(!verifiedEmail(validation,candidate.email)){summary.held++;continue;}
+        if(!verifiedEmail(validation,candidate.email)){await db.query("UPDATE website_prospects SET hold_reason='mailbox-deliverability-unverified' WHERE id=$1",[candidate.id]);summary.held++;continue;}
         const refreshed=await emailHistory(api,{startDate:new Date(Date.parse(window.date+'T00:00:00Z')-86400000).toISOString()});
         const ownIds=new Set((await db.query('SELECT message_id,email_message_id FROM website_attempts WHERE run_date=$1',[window.date])).rows.flatMap(r=>[r.message_id,r.email_message_id]).filter(Boolean));
         const foreign=refreshed.filter(m=>![m.id,m.altId,...(m.meta?.email?.email?.messageIds||[])].some(id=>ownIds.has(id)));
         const key='website-intro-'+createHash('sha256').update(candidate.email).digest('hex').slice(0,24);
-        if(!await reserveWebsite(db,{id:key,prospectId:candidate.id,date:window.date,observedForeign:outboundCount(foreign,window.date),message:copy})){summary.held++;continue;}
+        if(!await reserveWebsite(db,{id:key,prospectId:candidate.id,date:window.date,observedForeign:outboundCount(foreign,window.date),message:copy})){await db.query("UPDATE website_prospects SET hold_reason='capacity-or-permanent-reservation' WHERE id=$1",[candidate.id]);summary.held++;continue;}
         // A reserved attempt is permanent even if contact creation becomes ambiguous.
         const created=await api('POST','/contacts/',{body:{email:candidate.email,name:candidate.company,companyName:candidate.company,website:candidate.website,source:'Proxaim website generator'}});
         const contact=created.contact;
@@ -167,7 +157,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         await db.query("UPDATE website_prospects SET status='awaiting_reply',last_sent=now(),hold_reason=NULL,updated_at=now() WHERE id=$1",[candidate.id]);summary.accepted++;
         try {
           const actual=await proxaimEmailDetail(api,{id:sent.emailMessageId||sent.messageId,contactId:contact.id,direction:'outbound'},process.env.GHL_LOCATION_ID);
-          if(!/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Actual sender differs from Proxaim');
+          if(!/^Rae @ Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))throw Error('Actual sender differs from Proxaim');
           if(['delivered','opened','read'].includes(actual.status))summary.confirmedDelivered++;
         }catch{senderClear=false;summary.errors.push('accepted-email-sender-or-delivery-check-needs-reconciliation');}
       }catch(error){summary.held++;summary.errors.push(error.message.replace(/https?:\/\/\S+/g,'[website]').slice(0,160));}

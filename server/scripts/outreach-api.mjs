@@ -46,7 +46,7 @@ export async function emailDetail(api,message,locationId) {
 export async function proxaimEmailDetail(api,message,locationId,{sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}) {
   for(let attempt=0;attempt<4;attempt++) {
     const actual=await emailDetail(api,message,locationId);
-    if(/^Steven Nisbet\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))return actual;
+    if(/^Rae @ Proxaim\s*<hello@proxaim\.com>$/i.test(actual.emailFrom))return actual;
     if(attempt===3)throw Error('Actual Proxaim sender could not be confirmed; reconcile before continuing');
     await sleep(1000*(attempt+1));
   }
