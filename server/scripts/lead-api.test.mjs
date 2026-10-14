@@ -71,3 +71,12 @@ test('website discovery can stop throttled requests after two attempts',async()=
   }),/after 2 attempt/);
   assert.equal(calls,2);assert.equal(waits,1);
 });
+
+test('temporary 502 and 504 discovery responses retry',async()=>{
+  for(const status of [502,504]) {
+    let calls=0;
+    const result=await postLeadJson('https://example.invalid/api/leads',{}, {
+      maxAttempts:2,fetchImpl:async()=>++calls===1?new Response('',{status}):Response.json({leads:[]}),sleep:async()=>{},log:()=>{}});
+    assert.equal(calls,2);assert.deepEqual(result,{leads:[]});
+  }
+});

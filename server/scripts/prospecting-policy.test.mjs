@@ -14,8 +14,15 @@ test('rotation stays in Scotland and spans niches', () => {
   assert.equal(new Set(searches.map(x => x.location)).size, 7);
   assert.ok(searches.every(x => x.location.endsWith(', Scotland')));
 });
+test('saved queue runs through weekday business hours and excludes evenings and weekends',()=>{
+  assert(londonWindow(new Date('2026-10-14T09:15:00Z')).outreachDue);
+  assert(londonWindow(new Date('2026-10-14T15:45:00Z')).outreachDue);
+  assert(!londonWindow(new Date('2026-10-14T16:00:00Z')).outreachDue);
+  assert(!londonWindow(new Date('2026-10-14T08:45:00Z')).outreachDue);
+  assert(!londonWindow(new Date('2026-10-17T12:00:00Z')).outreachDue);
+  assert(londonWindow(new Date('2026-10-26T16:45:00Z')).outreachDue);
+});
 test('scores and email alone cannot release a candidate', () => {
   assert.match(holdReason({domain:'example.com',website:'https://example.com',status:'scored',email:'info@example.com'}), /awaiting/);
   assert.equal(holdReason({domain:'example.com',website:'https://example.com',status:'unreadable'}), 'unreadable-site');
 });
-

@@ -17,7 +17,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
   if (enabled && !process.env.GHL_EMAIL_FROM) throw new Error('Outreach sender missing');
   const api = apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
   const pool = new pg.Pool({connectionString:process.env.DATABASE_URL}), db=await pool.connect();
-  let ownsLock=false, accepted=0, held=0, qualified=0;
+  let ownsLock=false, accepted=0, held=0, qualified=0, usedToday=0;
   const detailCache=new Map();
   async function detailed(message) {
     if(message.direction!=='outbound') return message;
@@ -47,13 +47,14 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       limit=campaignLimit({configured:limit,delivered,failed,rampTarget});
       await db.query("UPDATE prospecting_ramp_days SET status='running',updated_at=now() WHERE run_date=$1",[date]);
       console.log(JSON.stringify({date,status:'new-campaign-delivery-check',delivered,failed,dailyLimit:limit}));
+      usedToday=(await db.query('SELECT count(*)::integer n FROM prospecting_send_attempts WHERE run_date=$1',[date])).rows[0].n;
     }
     // Existing sequences are checked every weekday, including days on which no
     // follow-up is due. Any inbound email stops the sequence without interpretation.
     const active=await db.query("SELECT * FROM prospecting_sequences WHERE status IN ('active','qualified') ORDER BY next_date LIMIT 200");
     for (const sequence of active.rows) {
       if(sequence.status==='qualified') {
-        if(!enabled || accepted>=limit) continue;
+        if(!enabled || accepted+usedToday>=limit) continue;
         const q=sequence.qualification;
         if(duplicate(q,contacts)) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason='existing-crm-contact' WHERE id=$1",[sequence.id]); continue; }
         const fresh=await qualifyWebsite({website:q.website,email:q.email,address:q.address},q.company).catch(()=>({hold:'website-evidence-unavailable'}));
@@ -71,7 +72,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       const stop=suppressionReason(contact,history);
       if (stop) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason=$2,updated_at=now() WHERE id=$1",[sequence.id,stop]); continue; }
       if (!enabled || String(sequence.next_date?.toISOString?.().slice(0,10) || sequence.next_date)>date) continue;
-      if (accepted>=limit) continue;
+      if (accepted+usedToday>=limit) continue;
       const q=sequence.qualification;
       const refreshed=await qualifyWebsite({website:q.website,email:q.email,address:q.address},q.company).catch(()=>({hold:'website-evidence-unavailable'}));
       if (!refreshed.candidate || refreshed.candidate.route!==q.route) {
@@ -81,12 +82,17 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       if (sendHold(refreshed.candidate)) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason='revalidation-failed' WHERE id=$1",[sequence.id]); continue; }
       if (await dispatch(sequence,refreshed.candidate,sequence.stage)) accepted++;
     }
+    if(enabled&&accepted+usedToday>=limit) {
+      await db.query("UPDATE prospecting_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[date]);
+      console.log(JSON.stringify({date,status:'outreach-daily-cap-reached',dailyLimit:limit,usedToday,accepted,sent:accepted}));
+      return;
+    }
     // Resume recent research without processing the same place repeatedly today.
     const candidates=await db.query(`SELECT c.* FROM (SELECT DISTINCT ON (place_id) * FROM prospecting_candidates
       WHERE run_date >= $1::date - interval '14 days' ORDER BY place_id,run_date DESC) c
       LEFT JOIN prospecting_qualifications q USING(place_id)
       WHERE q.place_id IS NULL OR q.updated_at < now()-interval '3 days' OR ($2 AND q.status='evidence-qualified') OR $3
-      ORDER BY c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date || Boolean(reviewDomain)]);
+      ORDER BY (q.status='evidence-qualified') DESC NULLS LAST,c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date || Boolean(reviewDomain)]);
     for (const record of candidates.rows) {
       const score=record.score, identity={company:record.company,website:score.website,email:score.email};
       if(reviewDomain && domainKey(score.website)!==reviewDomain) continue;
@@ -94,7 +100,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       if (duplicate(identity,contacts)) result={hold:'existing-crm-email-domain-or-company'};
       else result=reviewedCandidate ? {candidate:structuredClone(reviewedCandidate)} : await qualifyWebsite(score,record.company).catch(()=>({hold:'website-evidence-unavailable'}));
       const candidate=result.candidate;
-      if (candidate && enabled && accepted<limit) {
+      if (candidate && enabled && accepted+usedToday<limit) {
         candidate.validation=await api('POST','/email/verify',{body:{type:'email',verify:candidate.email},version:'v3'});
         if (!verifiedEmail(candidate.validation,candidate.email)) { result.hold='email-not-verified'; delete result.candidate; }
       }
@@ -103,7 +109,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
         [record.place_id,result.candidate?'evidence-qualified':'held',result.hold || (enabled?null:'sending-disabled'),JSON.stringify(result.candidate || null)]);
       if (!result.candidate) { held++; continue; }
       qualified++;
-      if (!enabled || accepted>=limit) continue;
+      if (!enabled || accepted+usedToday>=limit) continue;
       const hold=sendHold(candidate); if (hold) { held++; continue; }
       const id=randomUUID();
       const inserted=await db.query(`INSERT INTO prospecting_sequences(id,domain,email,company_key,qualification)

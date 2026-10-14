@@ -29,7 +29,7 @@ export async function postLeadJson(url, body, {
       body: JSON.stringify(body), signal: AbortSignal.timeout(240_000),
     });
     if (response.ok) return response.json();
-    if ([429,503].includes(response.status)) {
+    if ([429,502,503,504].includes(response.status)) {
       const body = await response.text();
       log({status:'lead-api-error-response',httpStatus:response.status,attempt:attempt+1,
         headers:Object.fromEntries(['server','content-type','retry-after','rndr-id','x-render-origin-server','cf-ray','cf-mitigated','x-powered-by'].map(name=>[name,response.headers.get(name)])),
@@ -38,7 +38,7 @@ export async function postLeadJson(url, body, {
         bodyMentionsRateLimit:/too many requests|rate.?limit/i.test(body),
         bodyMentionsStartup:/spin.?up|starting|waking|loading/i.test(body)});
     }
-    if (![429, 503].includes(response.status) || attempt === maxAttempts-1) {
+    if (![429,502,503,504].includes(response.status) || attempt === maxAttempts-1) {
       if (!response.bodyUsed) await response.body?.cancel();
       throw new Error(`Lead Generator HTTP ${response.status}; collection stopped after ${attempt + 1} attempt(s)`);
     }
@@ -49,4 +49,3 @@ export async function postLeadJson(url, body, {
     await sleep(waitMs);
   }
 }
-

@@ -5,6 +5,7 @@ export function londonWindow(now = new Date()) {
   }).formatToParts(now).map(p => [p.type, p.value]));
   return {
     date: `${parts.year}-${parts.month}-${parts.day}`,
+    outreachDue: ['Mon','Tue','Wed','Thu','Fri'].includes(parts.weekday) && Number(parts.hour)>=10 && Number(parts.hour)<17,
     due: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(parts.weekday) && parts.hour === '10',
   };
 }
@@ -25,4 +26,3 @@ export function holdReason(score) {
   if (!score.email) return 'missing-email';
   return 'awaiting-corporate-check-crm-dedup-email-validation-and-evidence-review';
 }
-

@@ -3,6 +3,7 @@ import { londonWindow, dailySearch, holdReason } from './prospecting-policy.mjs'
 import { postLeadJson } from './lead-api.mjs';
 import { internalReadiness } from './internal-readiness.mjs';
 import { runOutreach } from './run-outreach.mjs';
+import { runProspectingStages } from './prospecting-stages.mjs';
 
 const window = londonWindow();
 // A test override must name today's UK date, so a forgotten flag cannot
@@ -14,6 +15,7 @@ if (!window.due && !manualTest) {
   process.exit(0);
 }
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL required for durable cloud collection');
+async function collect() {
 const api = new URL(process.env.LEAD_GENERATOR_URL || 'https://lead-generator-1-vx3v.onrender.com');
 if (api.protocol !== 'https:') throw new Error('Lead Generator URL must use HTTPS');
 const limit = Number(process.env.PROSPECTING_SCAN_LIMIT || 30);
@@ -26,7 +28,7 @@ const db = await pool.connect();
 const search = dailySearch(window.date);
 let ownsLock = false;
 async function post(path, body) {
-  return postLeadJson(new URL(path, api), body);
+  return postLeadJson(new URL(path, api), body, {maxAttempts:2});
 }
 try {
   const lock = await db.query('SELECT pg_try_advisory_lock($1) AS acquired', [7101026]);
@@ -76,5 +78,8 @@ try {
   db.release();
   await pool.end();
 }
-if (process.env.GHL_API_TOKEN && process.env.GHL_LOCATION_ID) console.log(JSON.stringify(await internalReadiness()));
-await runOutreach(window.date);
+}
+await runProspectingStages({collect,outreach:async()=>{
+  if (process.env.GHL_API_TOKEN && process.env.GHL_LOCATION_ID) console.log(JSON.stringify(await internalReadiness()));
+  await runOutreach(window.date);
+}});
