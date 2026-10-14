@@ -35,11 +35,15 @@ export function remainingCapacity({observed, reserved, externalReserve = 50}) {
   // observed is FOREIGN outreach only; own attempts already count in reserved.
   return Math.max(0, Math.min(50-reserved,100-reserved-Math.max(observed,externalReserve)));
 }
-export function campaignLimit({configured=50,delivered=0,failed=0}) {
+export function campaignLimit({configured=50,delivered=0,failed=0,rampTarget=null}) {
   for(const n of [configured,delivered,failed]) if (!Number.isInteger(n) || n<0) throw new Error('Campaign delivery counts invalid');
   if (configured<1 || configured>50) throw new Error('Campaign ceiling invalid');
   const measured=delivered+failed;
   if (failed && (measured<20 || failed/measured>=0.03)) throw new Error('New campaign paused for delivery review');
+  if(rampTarget!==null) {
+    if(!Number.isInteger(rampTarget)||rampTarget<1||rampTarget>50)throw Error('Ramp target invalid');
+    return Math.min(configured,rampTarget);
+  }
   const ramp=delivered>=100?50:delivered>=50?25:delivered>=20?10:5;
   return Math.min(configured,ramp);
 }

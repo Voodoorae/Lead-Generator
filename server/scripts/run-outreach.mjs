@@ -4,6 +4,7 @@ import { apiClient, allContacts, emailHistory, emailDetail } from './outreach-ap
 import { qualifyWebsite } from './website-evidence.mjs';
 import { duplicate, companyKey, domainKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, outboundCount, campaignLimit } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
+import { dailyRampLimit } from './outreach-ramp.mjs';
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=null}={}) {
   if(reviewedCandidate && (!reviewDomain || reviewedCandidate.domain!==reviewDomain || reviewedCandidate.evidence?.checkedAt?.slice(0,10)!==date)) throw new Error('Manual evidence must match the target and today');
@@ -37,9 +38,14 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       const sequenceContacts=new Set((await db.query('SELECT contact_id FROM prospecting_sequences WHERE contact_id IS NOT NULL')).rows.map(r=>r.contact_id));
       const campaignMessages=[];
       for(const message of history.filter(m=>m.direction==='outbound' && sequenceContacts.has(m.contactId))) campaignMessages.push(await detailed(message));
-      const delivered=campaignMessages.filter(m=>['delivered','opened','read'].includes(m.status)).length;
+      const delivered=campaignMessages.filter(m=>['delivered','opened','read','clicked'].includes(m.status)).length;
       const failed=campaignMessages.filter(m=>['failed','undelivered','bounced'].includes(m.status)).length;
-      limit=campaignLimit({configured:limit,delivered,failed});
+      // Check failure safeguards before allocating a new day's ramp target.
+      campaignLimit({configured:limit,delivered,failed,rampTarget:1});
+      const rampTarget=await dailyRampLimit(db,date,{configured:limit,readDelivery:attempt=>emailDetail(api,
+        {id:attempt.email_message_id,contactId:attempt.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID)});
+      limit=campaignLimit({configured:limit,delivered,failed,rampTarget});
+      await db.query("UPDATE prospecting_ramp_days SET status='running',updated_at=now() WHERE run_date=$1",[date]);
       console.log(JSON.stringify({date,status:'new-campaign-delivery-check',delivered,failed,dailyLimit:limit}));
     }
     // Existing sequences are checked every weekday, including days on which no
@@ -107,6 +113,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       // Prevent a second prospect at the same firm within this run.
       contacts.push({email:candidate.email,website:candidate.website,companyName:candidate.company});
     }
+    if(enabled)await db.query("UPDATE prospecting_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[date]);
     console.log(JSON.stringify({date,status:enabled?'outreach-run-complete':'outreach-held',reason:enabled?undefined:'sending-disabled-pending-readiness',qualified,held,accepted,sent:accepted}));
     async function dispatch(sequence,candidate,stage) {
       // Refresh account-wide observations before EACH reservation, not once per batch.
@@ -150,4 +157,3 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
     db.release(); await pool.end();
   }
 }
-
