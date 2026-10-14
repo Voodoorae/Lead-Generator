@@ -6,12 +6,14 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "test": "node --import tsx --test src/routes/leads.test.ts"
+    "test": "node --import tsx --test src/routes/leads.test.ts",
+    "postinstall": "node --test scripts/crm-client.test.mjs scripts/lead-api.test.mjs scripts/prospecting-policy.test.mjs scripts/prospecting-stages.test.mjs scripts/outreach-readiness.test.mjs scripts/outreach-ramp.test.mjs && node scripts/check-crm.mjs && node scripts/check-ramp.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "pg": "^8.13.0"
+    "pg": "^8.13.0",
+    "playwright": "1.64.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
