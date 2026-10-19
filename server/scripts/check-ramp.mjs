@@ -4,7 +4,7 @@ import {apiClient,emailDetail} from './outreach-api.mjs';
 
 // Cloud build verification allocates the same durable limit as the scheduled
 // runner. It performs no contact creation or email submission.
-if(process.env.DATABASE_URL) {
+if(process.env.OUTREACH_ENABLED!==undefined&&process.env.DATABASE_URL&&process.env.GHL_API_TOKEN&&process.env.GHL_LOCATION_ID) {
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL});
   const db=await pool.connect();let owns=false;
   try {
