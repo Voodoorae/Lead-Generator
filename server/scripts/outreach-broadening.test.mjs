@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {qualifyWebsite} from './website-evidence.mjs';
+import {qualifyWebsite,registeredNumber} from './website-evidence.mjs';
 import {compose} from './outreach-policy.mjs';
 
 const metadata='<meta name="description" content="Synthetic business"><meta property="og:image" content="https://example.invalid/a.png">';
 const html=metadata+'<body>EXAMPLE CONSULTANCY LIMITED. Consultancy services. Company number SC123456. Chris@example.invalid.</body>';
 const registry='<title>EXAMPLE CONSULTANCY LIMITED overview</title><body>SC123456 Company status Active</body>';
 const read=async url=>({url,html:url.includes('service.gov.uk')?registry:html,headers:{csp:"default-src self"}});
+test('company-context Reg no is valid identity evidence without treating charity or membership numbers as companies',()=>{
+  assert.equal(registeredNumber('<p>Synthetic Accountants is a trading name of Synthetic Limited, a company incorporated in Scotland. Reg no: SC123456.</p>'),'SC123456');
+  assert.equal(registeredNumber('<p>Charity registration no SC123456</p>'),null);
+  assert.equal(registeredNumber('<p>Synthetic Limited. Membership registration no SC123456.</p>'),null);
+});
 test('a healthy professional website qualifies for an honest service offer without a fault claim',async()=>{
   const q=await qualifyWebsite({website:'https://example.invalid',address:'Stirling FK8 2AA'},'Example Consultancy Ltd',{read});
   assert.equal(q.candidate.route,'visibility-offer');

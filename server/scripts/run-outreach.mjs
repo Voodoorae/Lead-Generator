@@ -91,8 +91,8 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
     const candidates=await db.query(`SELECT c.* FROM (SELECT DISTINCT ON (place_id) * FROM prospecting_candidates
       WHERE run_date >= $1::date - interval '14 days' ORDER BY place_id,run_date DESC) c
       LEFT JOIN prospecting_qualifications q USING(place_id)
-      WHERE q.place_id IS NULL OR COALESCE(q.result->>'policyVersion','')<>'2026-10-19' OR q.updated_at < now()-interval '3 days' OR ($2 AND q.status='evidence-qualified') OR $3
-      ORDER BY (q.status='evidence-qualified') DESC NULLS LAST,c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date || Boolean(reviewDomain)]);
+      WHERE q.place_id IS NULL OR COALESCE(q.result->>'policyVersion','')<>'2026-10-19b' OR q.updated_at < now()-interval '3 days' OR ($2 AND q.status='evidence-qualified') OR $3
+      ORDER BY CASE WHEN q.status='evidence-qualified' THEN 0 WHEN q.place_id IS NULL THEN 1 ELSE 2 END,c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date || Boolean(reviewDomain)]);
     for (const record of candidates.rows) {
       const score=record.score, identity={company:record.company,website:score.website,email:score.email};
       if(reviewDomain && domainKey(score.website)!==reviewDomain) continue;
@@ -106,7 +106,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       }
       await db.query(`INSERT INTO prospecting_qualifications(place_id,status,reason,result) VALUES($1,$2,$3,$4)
         ON CONFLICT(place_id) DO UPDATE SET status=EXCLUDED.status,reason=EXCLUDED.reason,result=EXCLUDED.result,updated_at=now()`,
-        [record.place_id,result.candidate?'evidence-qualified':'held',result.hold || (enabled?null:'sending-disabled'),JSON.stringify({...result.candidate,policyVersion:'2026-10-19'})]);
+        [record.place_id,result.candidate?'evidence-qualified':'held',result.hold || (enabled?null:'sending-disabled'),JSON.stringify({...result.candidate,policyVersion:'2026-10-19b'})]);
       if (!result.candidate) { held++; continue; }
       qualified++;
       if (!enabled || accepted+usedToday>=limit) continue;

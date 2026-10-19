@@ -58,6 +58,10 @@ export function homepageObservation(html,headers) {
 export function registeredNumber(html) {
   const text = pageText(html);
   const matches = [...text.matchAll(/(?:company\s+(?:registration\s+)?(?:number|no\.?|reg\.?\s*no\.?)|registered\s+in\s+scotland)[\s\S]{0,90}?\b((?:SC|SO)\d{6}|\d{8})\b/gi)].map(m=>m[1].toUpperCase());
+  for(const m of text.matchAll(/\breg(?:istration)?\.?\s+(?:number|no\.?)\s*:?\s*((?:SC|SO)\d{6}|\d{8})\b/gi)) {
+    const prefix=text.slice(Math.max(0,m.index-180),m.index);
+    if(/\b(?:company|limited|ltd|llp)\b/i.test(prefix)&&!/\b(?:charity|membership|vat|ico)\s*$/i.test(prefix))matches.push(m[1].toUpperCase());
+  }
   return [...new Set(matches)].length === 1 ? matches[0] : null;
 }
 export function publishedBusinessEmails(html,domain) {
