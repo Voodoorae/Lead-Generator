@@ -23,6 +23,7 @@ function fakeDb(prior=null,attempts=[]) {
     if(sql.startsWith('SELECT run_date'))return {rows:prior?[prior]:[]};
     if(sql.startsWith('SELECT a.status'))return {rows:attempts};
     if(sql.startsWith('INSERT')){if(!days.has(args[0]))days.set(args[0],{target:args[1]});return {rows:[days.get(args[0])]};}
+    if(sql.startsWith('UPDATE prospecting_ramp_days')){days.set(args[0],{target:args[1]});return {rows:[]};}
     throw Error('Unexpected SQL');
   }};
 }
@@ -34,6 +35,16 @@ test('bootstrap is ten and same-day reruns retain the allocated target',async()=
   assert.equal(await dailyRampLimit(db,'2026-10-14',opts),10);
   assert.equal(reads,0);
   await assert.rejects(dailyRampLimit(db,'2026-10-17',opts),/weekdays only/);
+});
+test('explicit approved floor raises the daily target without altering overall capacity protection',async()=>{
+  const db=fakeDb();const options={floor:50,readDelivery:async()=>({status:'delivered'})};
+  assert.equal(await dailyRampLimit(db,'2026-10-19',{...options,floor:0}),10);
+  assert.equal(await dailyRampLimit(db,'2026-10-19',options),50);
+  assert.equal(db.days.get('2026-10-19').target,50);
+  assert.equal(await dailyRampLimit(db,'2026-10-19',options),50);
+  await assert.rejects(dailyRampLimit(db,'2026-10-19',{...options,floor:100}),/floor invalid/);
+  assert.throws(()=>campaignLimit({delivered:4,failed:1,rampTarget:50}),/delivery review/);
+  assert.equal(remainingCapacity({observed:100,reserved:0}),0);
 });
 test('Friday to Monday grows once, missing delivery proof holds, internal tests do not grow the ramp',async()=>{
   const prior={run_date:'2026-10-16',target:'11',status:'complete'};

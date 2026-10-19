@@ -11,6 +11,8 @@ if(websiteWindow(startedAt).due||process.env.WEBSITE_TEST_DATE===websiteWindow()
 }
 const professional=londonWindow(startedAt);
 const recovery=process.env.PROSPECTING_MANUAL_RUN==='true'&&process.env.PROSPECTING_TEST_DATE===professional.date;
-if(recovery) await runOutreach(professional.date);
+if(recovery&&process.env.PROSPECTING_COLLECT_DATE===professional.date) await import('./collect-prospects.mjs');
+else if(recovery) await runOutreach(professional.date);
 else if(professional.due) await import('./collect-prospects.mjs');
 else if(professional.outreachDue) await runOutreach(professional.date);
+

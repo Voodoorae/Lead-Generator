@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { londonWindow, dailySearch, holdReason } from './prospecting-policy.mjs';
+import { londonWindow, dailySearch, dailySearches, holdReason } from './prospecting-policy.mjs';
 test('10am London remains correct across the October clock change', () => {
   assert.equal(londonWindow(new Date('2026-10-12T09:00:00Z')).due, true);
   assert.equal(londonWindow(new Date('2026-10-12T10:00:00Z')).due, false);
@@ -13,6 +13,14 @@ test('rotation stays in Scotland and spans niches', () => {
   assert.equal(new Set(searches.map(x => x.niche)).size, 6);
   assert.equal(new Set(searches.map(x => x.location)).size, 7);
   assert.ok(searches.every(x => x.location.endsWith(', Scotland')));
+});
+test('discovery covers three Scottish cities and retries afternoon windows',()=>{
+  const searches=dailySearches('2026-10-19');
+  assert.equal(searches.length,3);assert.equal(new Set(searches.map(s=>s.location)).size,3);
+  assert(searches.every(s=>s.location.endsWith(', Scotland')));
+  assert(londonWindow(new Date('2026-10-19T12:15:00Z')).due);
+  assert(londonWindow(new Date('2026-10-19T14:45:00Z')).due);
+  assert(!londonWindow(new Date('2026-10-18T12:15:00Z')).due);
 });
 test('saved queue runs through weekday business hours and excludes evenings and weekends',()=>{
   assert(londonWindow(new Date('2026-10-14T09:15:00Z')).outreachDue);

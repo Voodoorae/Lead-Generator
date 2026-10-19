@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { londonWindow, dailySearch, holdReason } from './prospecting-policy.mjs';
+import { londonWindow, dailySearches, holdReason } from './prospecting-policy.mjs';
 import { postLeadJson } from './lead-api.mjs';
 import { internalReadiness } from './internal-readiness.mjs';
 import { runOutreach } from './run-outreach.mjs';
@@ -25,7 +25,8 @@ if (!Number.isInteger(limit) || limit < 1 || limit > 60) throw new Error('Scan l
 // its certificate through the deployment configuration, never disable checking.
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const db = await pool.connect();
-const search = dailySearch(window.date);
+const searches=dailySearches(window.date);
+const search={niche:searches[0].niche,location:searches.map(s=>s.location.replace(', Scotland','')).join(', ')+', Scotland'};
 let ownsLock = false;
 async function post(path, body) {
   return postLeadJson(new URL(path, api), body, {maxAttempts:2});
@@ -50,13 +51,18 @@ try {
     await db.query(`INSERT INTO prospecting_collection_runs(run_date,status,niche,location)
       VALUES($1,'running',$2,$3) ON CONFLICT(run_date) DO UPDATE SET status='running',updated_at=now()`,
     [window.date, search.niche, search.location]);
-    const result = await post('/api/leads', search);
-    if (!Array.isArray(result.leads)) throw new Error('Malformed lead search response');
-    const places = result.leads.filter(p => p.placeId && p.name).slice(0, limit);
+    const unique=new Map();
+    for(const area of searches) {
+      const batch=await post('/api/leads',area);
+      if(!Array.isArray(batch.leads))throw Error('Malformed lead search response');
+      for(const p of batch.leads.filter(p=>p.placeId&&p.name).slice(0,Math.ceil(limit/searches.length)))unique.set(p.placeId,{...p,searchLocation:area.location});
+    }
+    const result={leads:[...unique.values()]};
+    const places=result.leads.slice(0,limit);
     for (const place of places) {
       const existing = await db.query('SELECT 1 FROM prospecting_candidates WHERE run_date=$1 AND place_id=$2', [window.date, place.placeId]);
       if (existing.rowCount) continue;
-      const raw = await post('/api/score-lead', { placeId: place.placeId, name: place.name, location: search.location });
+      const raw = await post('/api/score-lead', { placeId: place.placeId, name: place.name, location: place.searchLocation,contactOnly:true });
       if (raw.placeId !== place.placeId) throw new Error('Score returned wrong place ID');
       // Do not persist generated hooks that may contain unsupported assertions.
       const { emailHook, ...score } = raw;

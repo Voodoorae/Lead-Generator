@@ -82,11 +82,20 @@ export function isReadinessReply(body) {
 }
 const clean = value => String(value).replace(/[\r\n\u0000-\u001f]/g,' ').replace(/\u2014/g,',').slice(0,250);
 export function compose(candidate, stage = 0) {
-  if (!['visibility','security'].includes(candidate.route)) throw new Error('Route requires reviewed copy');
+  if (!['visibility','security','visibility-offer'].includes(candidate.route)) throw new Error('Route requires reviewed copy');
   if (!Number.isInteger(stage) || stage < 0 || stage > 2) throw new Error('Invalid sequence stage');
   const company = clean(candidate.company), observation = clean(candidate.evidence.observation);
   const source=new URL(candidate.evidence.sourceUrl);
   if(source.protocol!=='https:' || domainKey(source.href)!==candidate.domain) throw new Error('Copy evidence URL mismatch');
+  if(candidate.route==='visibility-offer') {
+    if(!candidate.evidence.service)throw Error('Advertised service evidence required');
+    const subject='A visibility check for '+company;
+    const message='Hello,\n\n'+(stage===0?'I saw that your website describes '+clean(candidate.evidence.service)+'.':'A quick follow-up on my offer of a visibility check for '+company+'.')
+      +'\n\nWe help Scottish firms review how clearly their services and business details can be found and understood online. Would a short visibility check be useful?'
+      +'\n\nPage reviewed: '+source.href+'\n\nRae\nProxaim\nhello@proxaim.com\n\nIf this is not useful, reply “no thanks” and I’ll stop contacting you.';
+    const escape=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return {subject,message,html:'<div>'+escape(message).replace(/\n/g,'<br>')+'</div>'};
+  }
   const subject = stage === 0 ? 'A website observation for ' + company : 'Re: A website observation for ' + company;
   const opening = stage === 0 ? 'Hello,\n\nI was looking at ' + company + '’s website and noticed this: ' + observation + '.'
     : stage === 1 ? 'Hello,\n\nA quick follow-up on the website observation I sent for ' + company + ': ' + observation + '.'

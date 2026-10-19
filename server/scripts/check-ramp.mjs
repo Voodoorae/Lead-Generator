@@ -16,7 +16,7 @@ if(process.env.OUTREACH_ENABLED!==undefined&&process.env.DATABASE_URL&&process.e
       } else {
       const configured=Number(process.env.OUTREACH_DAILY_LIMIT||5);
       const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
-      const dailyLimit=await dailyRampLimit(db,date,{configured,readDelivery:a=>emailDetail(api,
+      const dailyLimit=await dailyRampLimit(db,date,{configured,floor:Number(process.env.OUTREACH_RAMP_FLOOR||0),readDelivery:a=>emailDetail(api,
         {id:a.email_message_id,contactId:a.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID)});
       console.log(JSON.stringify({status:'professional-ramp-verified',date,dailyLimit,configured,
         enabled:process.env.OUTREACH_ENABLED==='true',growthPercent:10,sent:0}));

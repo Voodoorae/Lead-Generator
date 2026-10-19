@@ -6,8 +6,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "test": "node --import tsx --test src/routes/leads.test.ts",
-    "postinstall": "node --test scripts/crm-client.test.mjs scripts/lead-api.test.mjs scripts/prospecting-policy.test.mjs scripts/prospecting-stages.test.mjs scripts/outreach-readiness.test.mjs scripts/outreach-ramp.test.mjs && node scripts/check-crm.mjs && node scripts/check-ramp.mjs"
+    "test": "node --import tsx --test src/routes/leads.test.ts src/routes/leads-contact.test.ts",
+    "postinstall": "node --test scripts/crm-client.test.mjs scripts/lead-api.test.mjs scripts/prospecting-policy.test.mjs scripts/prospecting-stages.test.mjs scripts/outreach-readiness.test.mjs scripts/outreach-broadening.test.mjs scripts/outreach-ramp.test.mjs && node scripts/check-crm.mjs && node scripts/check-ramp.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -24,3 +24,4 @@
     "typescript": "^5.4.0"
   }
 }
+
