@@ -1,4 +1,4 @@
-import { WEBSITE_LIMIT,SHARED_LIMIT } from './website-policy.mjs';
+import { sharedCapacity } from './shared-budget.mjs';
 export async function ensureWebsite(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS website_runs(run_date date PRIMARY KEY,status text NOT NULL,summary jsonb NOT NULL DEFAULT '{}',updated_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS website_prospects(id text PRIMARY KEY,domain text UNIQUE NOT NULL,email text,company_key text NOT NULL,sector text NOT NULL,qualification jsonb NOT NULL DEFAULT '{}',status text NOT NULL DEFAULT 'held',hold_reason text,contact_id text,outcome text,last_sent timestamptz,updated_at timestamptz NOT NULL DEFAULT now());
@@ -9,17 +9,12 @@ export async function ensureWebsite(db) {
     CREATE TABLE IF NOT EXISTS website_attempts(id text PRIMARY KEY,prospect_id text UNIQUE NOT NULL REFERENCES website_prospects(id),run_date date NOT NULL,status text NOT NULL,message_id text,email_message_id text,message jsonb NOT NULL,updated_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS website_controls(key text PRIMARY KEY,value jsonb NOT NULL,updated_at timestamptz NOT NULL DEFAULT now())`);
 }
-export async function reserveWebsite(db,{id,prospectId,date,observedForeign,foreignReserve=80,message}) {
-  if(!Number.isInteger(observedForeign)||observedForeign<0||!Number.isInteger(foreignReserve)||foreignReserve<0||foreignReserve>SHARED_LIMIT) throw Error('Capacity evidence invalid');
+export async function reserveWebsite(db,{id,prospectId,date,history,message}) {
   await db.query('BEGIN');
   try {
     await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
     if((await db.query('SELECT 1 FROM website_attempts WHERE id=$1 OR prospect_id=$2',[id,prospectId])).rowCount) {await db.query('ROLLBACK');return false;}
-    const count=(await db.query('SELECT count(*)::integer n FROM website_attempts WHERE run_date=$1',[date])).rows[0].n;
-    const alerts=(await db.query("SELECT count(*)::integer n FROM website_alerts WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')",[date])).rows[0].n;
-    const acknowledgements=(await db.query("SELECT count(*)::integer n FROM website_acknowledgements WHERE run_date=$1 AND status IN ('reserved','accepted','uncertain')",[date])).rows[0].n;
-    const tests=(await db.query("SELECT count(*)::integer n FROM website_controls WHERE key LIKE 'notification-test-%' AND value->>'date'=$1",[date])).rows[0].n;
-    if(count>=WEBSITE_LIMIT||count+alerts+acknowledgements+tests+Math.max(foreignReserve,observedForeign)>=SHARED_LIMIT) {await db.query('ROLLBACK');return false;}
+    if(!await sharedCapacity(db,date,history)) {await db.query('ROLLBACK');return false;}
     await db.query("INSERT INTO website_attempts(id,prospect_id,run_date,status,message) VALUES($1,$2,$3,'reserved',$4)",[id,prospectId,date,JSON.stringify(message)]);
     await db.query('COMMIT');return true;
   } catch(error) {await db.query('ROLLBACK');throw error;}
@@ -47,3 +42,5 @@ export async function retireWebsite(db,id,outcome) {
     await db.query('COMMIT');return true;
   } catch(error) {await db.query('ROLLBACK');throw error;}
 }
+
+

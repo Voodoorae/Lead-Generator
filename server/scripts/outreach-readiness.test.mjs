@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {duplicate,suppressionReason,verifiedEmail,remainingCapacity,outboundCount,addWeekdays,sendHold,compose,campaignLimit,isReadinessReply} from './outreach-policy.mjs';
+import {duplicate,suppressionReason,verifiedEmail,outboundCount,addWeekdays,sendHold,compose,campaignLimit,isReadinessReply} from './outreach-policy.mjs';
 import {apiClient,allContacts,emailHistory,emailDetail} from './outreach-api.mjs';
 import {homepageObservation,registeredNumber,publicAddress,qualifyWebsite,publishedBusinessEmails} from './website-evidence.mjs';
 import {submitOnce} from './outreach-store.mjs';
@@ -23,14 +23,6 @@ test('only the exact deliverable low-risk email is accepted',()=>{
   const good={result:'deliverable',risk:'low',address:'info@example.com'};
   assert.equal(verifiedEmail(good,'INFO@example.com'),true);
   for(const change of [{result:'catch_all'},{risk:'medium'},{address:'someone@example.com'},{leadConnectorRecommendation:{isEmailValid:false}}]) assert.equal(verifiedEmail({...good,...change},good.address),false);
-});
-test('new 50 and overall 100 ceilings both hold',()=>{
-  assert.equal(remainingCapacity({observed:0,reserved:49}),1);
-  assert.equal(remainingCapacity({observed:0,reserved:50}),0);
-  assert.equal(remainingCapacity({observed:99,reserved:0}),1);
-  assert.equal(remainingCapacity({observed:100,reserved:0}),0);
-  assert.equal(remainingCapacity({observed:50,reserved:49}),1);
-  assert.throws(()=>remainingCapacity({observed:NaN,reserved:0}));
 });
 test('live batches grow only with measured delivery and stop on early failures',()=>{
   assert.equal(campaignLimit({configured:50}),5);

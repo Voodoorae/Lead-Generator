@@ -18,7 +18,9 @@ export function dailySearch(date) {
   return { niche: niches[day % niches.length], location: `${cities[Math.floor(day / niches.length) % cities.length]}, Scotland` };
 }
 export function dailySearches(date) {
-  return [0,6,12].map(offset=>dailySearch(new Date(Date.parse(date+'T12:00:00Z')+offset*86400000).toISOString().slice(0,10)));
+  const first=dailySearch(date);
+  const city=cities.indexOf(first.location.replace(', Scotland',''));
+  return [0,1,2].flatMap(offset=>niches.map(niche=>({niche,location:cities[(city+offset)%cities.length]+', Scotland'})));
 }
 
 // Scanner scores are research priorities. They are never sufficient permission
@@ -29,3 +31,6 @@ export function holdReason(score) {
   if (!score.email) return 'missing-email';
   return 'awaiting-corporate-check-crm-dedup-email-validation-and-evidence-review';
 }
+
+
+

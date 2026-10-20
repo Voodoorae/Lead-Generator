@@ -12,8 +12,8 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
     console.log(JSON.stringify({date,status:'outreach-blocked',reason:'crm-not-configured',sent:0})); return;
   }
   const enabled = process.env.OUTREACH_ENABLED === 'true';
-  let limit = Number(process.env.OUTREACH_DAILY_LIMIT || 5);
-  if (!Number.isInteger(limit) || limit<1 || limit>50) throw new Error('Outreach daily limit must be 1 to 50');
+  let limit = Number(process.env.OUTREACH_DAILY_LIMIT || 1000);
+  if (!Number.isInteger(limit) || limit<1 || limit>1000) throw new Error('Outreach daily limit must be 1 to 1000');
   if (enabled && !process.env.GHL_EMAIL_FROM) throw new Error('Outreach sender missing');
   const api = apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
   const pool = new pg.Pool({connectionString:process.env.DATABASE_URL}), db=await pool.connect();
@@ -42,10 +42,10 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       const failed=campaignMessages.filter(m=>['failed','undelivered','bounced'].includes(m.status)).length;
       // Check failure safeguards before allocating a new day's ramp target.
       campaignLimit({configured:limit,delivered,failed,rampTarget:1});
-      const rampTarget=await dailyRampLimit(db,date,{configured:limit,floor:Number(process.env.OUTREACH_RAMP_FLOOR||0),readDelivery:attempt=>emailDetail(api,
+      const rampTarget=await dailyRampLimit(db,date,{configured:limit,floor:Number(process.env.OUTREACH_RAMP_FLOOR||100),readDelivery:attempt=>emailDetail(api,
         {id:attempt.email_message_id,contactId:attempt.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID)});
       limit=campaignLimit({configured:limit,delivered,failed,rampTarget});
-      await db.query("UPDATE prospecting_ramp_days SET status='running',updated_at=now() WHERE run_date=$1",[date]);
+      await db.query("UPDATE shared_outreach_ramp_days SET status='running',updated_at=now() WHERE run_date=$1",[date]);
       console.log(JSON.stringify({date,status:'new-campaign-delivery-check',delivered,failed,dailyLimit:limit}));
       usedToday=(await db.query('SELECT count(*)::integer n FROM prospecting_send_attempts WHERE run_date=$1',[date])).rows[0].n;
     }
@@ -83,7 +83,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       if (await dispatch(sequence,refreshed.candidate,sequence.stage)) accepted++;
     }
     if(enabled&&accepted+usedToday>=limit) {
-      await db.query("UPDATE prospecting_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[date]);
+      await db.query("UPDATE shared_outreach_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[date]);
       console.log(JSON.stringify({date,status:'outreach-daily-cap-reached',dailyLimit:limit,usedToday,accepted,sent:accepted}));
       return;
     }
@@ -119,7 +119,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       // Prevent a second prospect at the same firm within this run.
       contacts.push({email:candidate.email,website:candidate.website,companyName:candidate.company});
     }
-    if(enabled)await db.query("UPDATE prospecting_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[date]);
+    if(enabled)await db.query("UPDATE shared_outreach_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[date]);
     console.log(JSON.stringify({date,status:enabled?'outreach-run-complete':'outreach-held',reason:enabled?undefined:'sending-disabled-pending-readiness',qualified,held,accepted,sent:accepted}));
     async function dispatch(sequence,candidate,stage) {
       // Refresh account-wide observations before EACH reservation, not once per batch.
@@ -127,12 +127,8 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       // date. This remains correct in both GMT and BST.
       const startDate=new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString();
       const history=await emailHistory(api,{startDate});
-      const own=await db.query('SELECT message_id,email_message_id FROM prospecting_send_attempts WHERE run_date=$1',[date]);
-      const ownIds=new Set(own.rows.flatMap(r=>[r.message_id,r.email_message_id]).filter(Boolean));
-      const foreign=history.filter(m=>![m.id,m.altId,...(m.meta?.email?.email?.messageIds || [])].some(id=>ownIds.has(id)));
-      const observed=outboundCount(foreign,date);
       const key=sequence.id+':'+stage;
-      if (!await reserveAttempt(db,{key,sequenceId:sequence.id,date,observed,externalReserve:50,dailyLimit:limit})) return false;
+      if (!await reserveAttempt(db,{key,sequenceId:sequence.id,date,history,dailyLimit:limit})) return false;
       let contactId=sequence.contact_id;
       if (!contactId) {
         // Durable state BEFORE creation makes a timeout/crash a reconciliation
@@ -163,3 +159,5 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
     db.release(); await pool.end();
   }
 }
+
+

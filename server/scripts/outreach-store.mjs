@@ -1,3 +1,4 @@
+import { sharedCapacity } from './shared-budget.mjs';
 export async function ensureOutreach(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS prospecting_sequences (
     id TEXT PRIMARY KEY, domain TEXT NOT NULL UNIQUE, email TEXT NOT NULL UNIQUE, company_key TEXT NOT NULL UNIQUE,
@@ -14,18 +15,17 @@ export async function ensureOutreach(db) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`);
 }
-export async function reserveAttempt(db, {key,sequenceId,date,observed,externalReserve=50,dailyLimit=50}) {
-  // Every writer using this ledger takes the same transaction lock. Unintegrated
-  // writers require a separately enforced external budget, never a guessed zero.
+export async function reserveAttempt(db, {key,sequenceId,date,history,dailyLimit=100}) {
+  // Every integrated writer takes this lock and counts both ledgers.
+  // Other CRM emails consume allowance through the refreshed account history.
   await db.query('BEGIN');
   try {
     await db.query('SELECT pg_advisory_xact_lock($1)', [7101050]);
     const existing = await db.query('SELECT status FROM prospecting_send_attempts WHERE attempt_key=$1',[key]);
     if (existing.rowCount) { await db.query('ROLLBACK'); return false; }
     const local = await db.query('SELECT count(*)::integer AS n FROM prospecting_send_attempts WHERE run_date=$1',[date]);
-    if (!Number.isInteger(dailyLimit) || dailyLimit<1 || dailyLimit>50) throw new Error('Daily campaign limit invalid');
-    const {remainingCapacity} = await import('./outreach-policy.mjs');
-    if (local.rows[0].n>=dailyLimit || !remainingCapacity({observed,reserved:local.rows[0].n,externalReserve})) { await db.query('ROLLBACK'); return false; }
+    if (!Number.isInteger(dailyLimit) || dailyLimit<1 || dailyLimit>1000) throw new Error('Daily campaign limit invalid');
+    if (local.rows[0].n>=dailyLimit || !await sharedCapacity(db,date,history)) { await db.query('ROLLBACK'); return false; }
     await db.query(`INSERT INTO prospecting_send_attempts(attempt_key,sequence_id,run_date,status) VALUES($1,$2,$3,'reserved')`,[key,sequenceId,date]);
     await db.query('COMMIT'); return true;
   } catch (error) { await db.query('ROLLBACK'); throw error; }
@@ -44,3 +44,5 @@ export async function submitOnce(db, api, attemptKey, body) {
     throw new Error('Send outcome requires reconciliation; automatic retry blocked');
   }
 }
+
+

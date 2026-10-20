@@ -53,7 +53,7 @@ test('dated internal probe sends only once and reconciles the actual provider re
   const prior=Object.fromEntries(Object.keys(config).map(k=>[k,process.env[k]]));Object.assign(process.env,config);
   t.after(()=>{for(const [k,v]of Object.entries(prior))if(v===undefined)delete process.env[k];else process.env[k]=v;});
   let record,sends=0;
-  const db={async query(sql,p){if(sql==='SELECT value FROM website_controls WHERE key=$1')return{rows:record?[{value:record}]:[]};if(sql.includes('AS n'))return{rows:[{n:0}]};if(sql.startsWith('INSERT INTO website_controls')||sql.startsWith('UPDATE website_controls'))record=JSON.parse(p[1]);return{rowCount:1};}};
+  const db={async query(sql,p){if(sql==='SELECT value FROM website_controls WHERE key=$1')return{rows:record?[{value:record}]:[]};if(sql.startsWith('SELECT target'))return{rows:[{target:100}]};if(sql.startsWith('SELECT message_id'))return{rows:[]};if(sql.startsWith('INSERT INTO website_controls')||sql.startsWith('UPDATE website_controls'))record=JSON.parse(p[1]);return{rowCount:1};}};
   const api=async(method,path,{body}={})=>{
     if(path.startsWith('/contacts/'))return{contact:{id:'test-contact',locationId:'test-location',email:config.WEBSITE_ALERT_EMAIL}};
     if(path.endsWith('/export'))return{messages:[],total:0};
@@ -64,3 +64,5 @@ test('dated internal probe sends only once and reconciles the actual provider re
   await notificationTest(db,api,'2026-10-12');assert.equal(sends,1);
   assert.equal(await notificationTest(db,api,'2026-10-13'),null);
 });
+
+

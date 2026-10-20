@@ -9,6 +9,7 @@ import { ensureOutreach } from './outreach-store.mjs';
 import { websiteWindow,websiteSearches,recipientHold,composeWebsite,retireDecision,WEBSITE_FROM,websiteSenderVerified,websiteSectorAllowed,advertisedService } from './website-policy.mjs';
 import { openWebsiteBrowser,corporateWebsite,verifyPreview } from './website-browser.mjs';
 import { pageText,readPublicPage } from './website-evidence.mjs';
+import { dailyRampLimit } from './outreach-ramp.mjs';
 import { ensureSales } from './website-sales.mjs';
 
 export const workflowSignature = workflows => createHash('sha256').update(JSON.stringify(workflows.filter(w=>w.status==='published').map(w=>({id:w.id,updatedAt:w.updatedAt,version:w.version})).sort((a,b)=>a.id.localeCompare(b.id)))).digest('hex');
@@ -41,6 +42,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     runStarted=true;
     if(!process.env.GHL_API_TOKEN||!process.env.GHL_LOCATION_ID)throw Error('CRM API credentials required');
     const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
+    if(enabled&&!readinessOnly) await dailyRampLimit(db,window.date,{configured:Number(process.env.OUTREACH_DAILY_LIMIT||1000),floor:Number(process.env.OUTREACH_RAMP_FLOOR||100),readDelivery:a=>emailDetail(api,{id:a.email_message_id,contactId:a.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID)});
     const contacts=await allContacts(api);
     if(contacts.some(c=>c.locationId!==process.env.GHL_LOCATION_ID))throw Error('CRM account mismatch');
     let workflowClear=false;
@@ -143,10 +145,8 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         const validation=await api('POST','/email/verify',{body:{type:'email',verify:candidate.email},version:'v3'});
         if(!verifiedEmail(validation,candidate.email)){await db.query("UPDATE website_prospects SET hold_reason='mailbox-deliverability-unverified' WHERE id=$1",[candidate.id]);summary.held++;continue;}
         const refreshed=await emailHistory(api,{startDate:new Date(Date.parse(window.date+'T00:00:00Z')-86400000).toISOString()});
-        const ownIds=new Set((await db.query('SELECT message_id,email_message_id FROM website_attempts WHERE run_date=$1',[window.date])).rows.flatMap(r=>[r.message_id,r.email_message_id]).filter(Boolean));
-        const foreign=refreshed.filter(m=>![m.id,m.altId,...(m.meta?.email?.email?.messageIds||[])].some(id=>ownIds.has(id)));
         const key='website-intro-'+createHash('sha256').update(candidate.email).digest('hex').slice(0,24);
-        if(!await reserveWebsite(db,{id:key,prospectId:candidate.id,date:window.date,observedForeign:outboundCount(foreign,window.date),message:copy})){await db.query("UPDATE website_prospects SET hold_reason='capacity-or-permanent-reservation' WHERE id=$1",[candidate.id]);summary.held++;continue;}
+        if(!await reserveWebsite(db,{id:key,prospectId:candidate.id,date:window.date,history:refreshed,message:copy})){await db.query("UPDATE website_prospects SET hold_reason='capacity-or-permanent-reservation' WHERE id=$1",[candidate.id]);summary.held++;continue;}
         // A reserved attempt is permanent even if contact creation becomes ambiguous.
         const created=await api('POST','/contacts/',{body:{email:candidate.email,name:candidate.company,companyName:candidate.company,website:candidate.website,source:'Proxaim website generator'}});
         const contact=created.contact;
@@ -168,6 +168,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
       }
     }
     summary.status=summary.errors.length?'complete-with-holds':'complete';
+    if(enabled)await db.query("UPDATE shared_outreach_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[window.date]);
     return summary;
   }catch(error){summary.status='failed';summary.errors.push(error.message);throw error;}
   finally {
@@ -176,3 +177,5 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     db.release();await pool.end();console.log(JSON.stringify({campaign:'website-generator',...summary}));
   }
 }
+
+

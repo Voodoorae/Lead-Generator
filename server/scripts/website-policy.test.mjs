@@ -53,13 +53,12 @@ test('verified advertised service qualifies without defects, screenshots or a pr
   assert.equal(recipientHold({...prospect,email:'info@elsewhere.invalid'}),'business-domain-email-unverified');
   assert.equal(advertisedService('private dentists','Dental implants available.'),'Dental implants');
 });
-test('twentieth attempt is allowed, twenty-first and exhausted shared capacity are blocked',async()=>{
-  function dbWith(n){const log=[];return{log,async query(sql){log.push(sql);if(sql.startsWith('SELECT 1'))return{rowCount:0};if(sql.includes('count(*)'))return{rows:[{n:/website_alerts|website_acknowledgements|website_controls/.test(sql)?0:n}]};return{rows:[],rowCount:1};}};}
-  const args={id:'key',prospectId:'id',date:'2026-10-12',observedForeign:0,message:{}};
-  assert.equal(await reserveWebsite(dbWith(19),args),true);
-  assert.equal(await reserveWebsite(dbWith(20),args),false);
-  assert.equal(await reserveWebsite(dbWith(19),{...args,observedForeign:81}),false);
-  await assert.rejects(reserveWebsite(dbWith(0),{...args,observedForeign:NaN}));
+test('website shares the 100 allowance, without a separate twenty limit',async()=>{
+  function dbWith(n){return{async query(sql){if(sql.startsWith('SELECT 1'))return{rowCount:0};if(sql.startsWith('SELECT target'))return{rows:[{target:100}]};if(sql.startsWith('SELECT message_id'))return{rows:Array.from({length:n},()=>({}))};return{rows:[],rowCount:1};}};}
+  const args={id:'key',prospectId:'id',date:'2026-10-20',history:[],message:{}};
+  assert.equal(await reserveWebsite(dbWith(99),args),true);
+  assert.equal(await reserveWebsite(dbWith(100),args),false);
+  await assert.rejects(reserveWebsite(dbWith(0),{...args,history:null}));
 });
 test('ambiguous email send is called once and marked uncertain',async()=>{
   let calls=0;const queries=[];const db={async query(sql){queries.push(sql);}};
@@ -71,3 +70,5 @@ test('active replies never age out; unanswered preview closes only after 30 days
   assert.equal(retireDecision({lastSent:'2026-10-01',hasReply:false,now:new Date('2026-10-20')}),null);
   assert.equal(retireDecision({lastSent:'2026-10-01',hasReply:false,now:new Date('2026-11-01')}),'closed_no_reply');
 });
+
+

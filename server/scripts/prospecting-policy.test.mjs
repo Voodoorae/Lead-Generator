@@ -14,9 +14,10 @@ test('rotation stays in Scotland and spans niches', () => {
   assert.equal(new Set(searches.map(x => x.location)).size, 7);
   assert.ok(searches.every(x => x.location.endsWith(', Scotland')));
 });
-test('discovery covers three Scottish cities and retries afternoon windows',()=>{
+test('discovery covers six professions across three Scottish cities and retries afternoon windows',()=>{
   const searches=dailySearches('2026-10-19');
-  assert.equal(searches.length,3);assert.equal(new Set(searches.map(s=>s.location)).size,3);
+  assert.equal(searches.length,18);assert.equal(new Set(searches.map(s=>s.location)).size,3);
+  assert.equal(new Set(searches.map(s=>s.niche)).size,6);
   assert(searches.every(s=>s.location.endsWith(', Scotland')));
   assert(londonWindow(new Date('2026-10-19T12:15:00Z')).due);
   assert(londonWindow(new Date('2026-10-19T14:45:00Z')).due);
@@ -34,3 +35,4 @@ test('scores and email alone cannot release a candidate', () => {
   assert.match(holdReason({domain:'example.com',website:'https://example.com',status:'scored',email:'info@example.com'}), /awaiting/);
   assert.equal(holdReason({domain:'example.com',website:'https://example.com',status:'unreadable'}), 'unreadable-site');
 });
+

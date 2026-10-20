@@ -18,8 +18,8 @@ if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL required for durabl
 async function collect() {
 const api = new URL(process.env.LEAD_GENERATOR_URL || 'https://lead-generator-1-vx3v.onrender.com');
 if (api.protocol !== 'https:') throw new Error('Lead Generator URL must use HTTPS');
-const limit = Number(process.env.PROSPECTING_SCAN_LIMIT || 30);
-if (!Number.isInteger(limit) || limit < 1 || limit > 60) throw new Error('Scan limit must be 1 to 60');
+const limit = Number(process.env.PROSPECTING_SCAN_LIMIT || 300);
+if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Scan limit must be 1 to 1000');
 
 // Driver defaults retain TLS validation. If the database requires a CA, supply
 // its certificate through the deployment configuration, never disable checking.
@@ -89,3 +89,5 @@ await runProspectingStages({collect,outreach:async()=>{
   if (process.env.GHL_API_TOKEN && process.env.GHL_LOCATION_ID) console.log(JSON.stringify(await internalReadiness()));
   await runOutreach(window.date);
 }});
+
+

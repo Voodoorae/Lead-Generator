@@ -27,21 +27,13 @@ export function verifiedEmail(result, expected) {
   return result?.result === 'deliverable' && result.risk === 'low'
     && emailKey(result.address) === emailKey(expected) && result.leadConnectorRecommendation?.isEmailValid !== false;
 }
-export function remainingCapacity({observed, reserved, externalReserve = 50}) {
-  for (const n of [observed,reserved,externalReserve]) if (!Number.isInteger(n) || n < 0 || n > 1000000) throw new Error('Daily capacity inputs invalid');
-  if (externalReserve > 100) throw new Error('External reserve exceeds cap');
-  // User authorised 50 additional emails on 11 October: 50 for this campaign,
-  // including follow-ups, plus the existing 50 allowance for other outreach.
-  // observed is FOREIGN outreach only; own attempts already count in reserved.
-  return Math.max(0, Math.min(50-reserved,100-reserved-Math.max(observed,externalReserve)));
-}
 export function campaignLimit({configured=50,delivered=0,failed=0,rampTarget=null}) {
   for(const n of [configured,delivered,failed]) if (!Number.isInteger(n) || n<0) throw new Error('Campaign delivery counts invalid');
-  if (configured<1 || configured>50) throw new Error('Campaign ceiling invalid');
+  if (configured<1 || configured>1000) throw new Error('Campaign ceiling invalid');
   const measured=delivered+failed;
   if (failed && (measured<20 || failed/measured>=0.03)) throw new Error('New campaign paused for delivery review');
   if(rampTarget!==null) {
-    if(!Number.isInteger(rampTarget)||rampTarget<1||rampTarget>50)throw Error('Ramp target invalid');
+    if(!Number.isInteger(rampTarget)||rampTarget<1||rampTarget>1000)throw Error('Ramp target invalid');
     return Math.min(configured,rampTarget);
   }
   const ramp=delivered>=100?50:delivered>=50?25:delivered>=20?10:5;
@@ -107,3 +99,5 @@ export function compose(candidate, stage = 0) {
   const escape = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   return {subject,message:text,html:'<div>' + escape(text).replace(/\n/g,'<br>') + '</div>'};
 }
+
+
