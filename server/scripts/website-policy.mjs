@@ -56,9 +56,9 @@ export function composeWebsite(candidate) {
   if(recipientHold(candidate)) throw Error('Candidate not qualified');
   const name=String(candidate.company).replace(/[\r\n\u2014]/g,' ').slice(0,150);
   const issueVerified=candidate.evidence.findings?.length&&candidate.evidence.desktop&&candidate.evidence.mobile;
-  const opening=candidate.previewVerified?`I've put together a website preview for ${name}, using your existing branding.`:issueVerified?`I noticed ${candidate.evidence.findings[0]}`:`I saw that ${name} advertises ${candidate.evidence.offerService}. I build focused pages for customer enquiries.`;
-  const invitation=candidate.previewVerified?'Would you like to see the preview before deciding?':'Would you like me to prepare a preview before you decide?';
-  const message=`Hello ${name} team,\n\n${opening}\n\nA one-page build is £299 on your existing domain and hosting, including a customer booking-request form.\n\n${invitation}\n\nProxaim\n${WEBSITE_FROM}\n\nIf this isn't relevant, reply and I'll stop contacting you.`;
+  const opening=candidate.previewVerified?`I've put together a website preview for ${name}, using your existing branding.`:issueVerified?`I noticed ${candidate.evidence.findings[0]}`:`I saw that ${name} advertises ${candidate.evidence.offerService}.`;
+  const invitation=candidate.previewVerified?'Would you like to see the preview before deciding?':'Would you like me to prepare a concept using your business as the example?';
+  const message=`Hello ${name} team,\n\n${opening}\n\nWe build focused one-page websites that help customers understand your services and request a booking. A build is £299 using your existing domain and hosting, including a customer booking-request form.\n\n${invitation}\n\nProxaim\n${WEBSITE_FROM}\n\nIf this isn't relevant, reply and I'll stop contacting you.`;
   return {subject:(candidate.previewVerified?'A website preview for ':'A one-page website for ')+name,message,html:'<div>'+escapeHtml(message).replace(/\n/g,'<br>')+'</div>'};
 }
 export function sameBusiness(a,b) {

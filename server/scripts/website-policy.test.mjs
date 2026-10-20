@@ -43,6 +43,10 @@ test('verified advertised service qualifies without defects, screenshots or a pr
   assert(copy.message.includes('advertises heat pumps'));
   assert(!copy.message.includes('I noticed'));
   assert(!copy.message.includes("I've put together"));
+  assert(copy.message.includes('Would you like me to prepare a concept using your business as the example?'));
+  assert(copy.message.includes('£299 using your existing domain and hosting, including a customer booking-request form'));
+  assert.equal((copy.message.match(/\?/g)||[]).length,1);
+  assert(!/guarantee|more traffic|more customers|\u2014/i.test(copy.message));
   assert.equal(recipientHold({...prospect,evidence:{...evidence,serviceExcerpt:'Welcome'}}),'current-service-or-issue-evidence-required');
   assert.equal(recipientHold({...prospect,corporate:{verified:false}}),'active-company-and-trading-identity-unverified');
   assert.equal(recipientHold({...prospect,emailSourceUrl:null}),'published-email-unverified');
