@@ -15,6 +15,7 @@ test('suppression, replies and bounces stop all follow-ups',()=>{
   assert.equal(suppressionReason({dnd:true}),'do-not-contact');
   assert.equal(suppressionReason({dndSettings:{email:{status:'active'}}}),'do-not-contact');
   assert.equal(suppressionReason({tags:['opt-out']}),'suppression-tag');
+  assert.equal(suppressionReason({tags:['php-alert-followup-only']}),'suppression-tag');
   assert.equal(suppressionReason({},[{direction:'inbound',body:'Interested'}]),'reply-received');
   assert.equal(suppressionReason({},[{direction:'outbound',status:'failed'}]),'delivery-failure');
   assert.equal(suppressionReason({},[{direction:'outbound',status:'delivered'}]),null);

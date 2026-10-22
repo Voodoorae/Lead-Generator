@@ -17,7 +17,7 @@ export function duplicate(candidate, contacts) {
 export function suppressionReason(contact, history = []) {
   const tags = (contact.tags || []).map(t => String(t).toLowerCase());
   if (contact.dnd || contact.dndSettings?.Email?.status === 'active' || contact.dndSettings?.email?.status === 'active') return 'do-not-contact';
-  if (tags.some(t => /unsubscribe|opt.?out|do.?not.?contact|suppressed|bounced/.test(t))) return 'suppression-tag';
+  if (tags.some(t => /unsubscribe|opt.?out|do.?not.?contact|suppressed|bounced|php-alert-followup-only/.test(t))) return 'suppression-tag';
   if (contact.validEmail === false) return 'invalid-email';
   if (history.some(m => m.direction === 'inbound')) return 'reply-received';
   if (history.some(m => ['failed','undelivered','bounced'].includes(m.status))) return 'delivery-failure';
