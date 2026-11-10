@@ -24,8 +24,7 @@ export async function internalReadiness({send=false,senderOnly=false}={}) {
       if (!contact || contact.locationId!==process.env.GHL_LOCATION_ID || !process.env.GHL_INTERNAL_TEST_EMAIL || emailKey(contact.email)!==emailKey(process.env.GHL_INTERNAL_TEST_EMAIL)) throw new Error('Internal recipient account or address mismatch');
       if (suppressionReason(contact)) throw new Error('Internal test contact is suppressed');
       if (!process.env.GHL_EMAIL_FROM) throw new Error('Internal sender missing');
-      const history=await emailHistory(api,{startDate:new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString()});
-      if (!resumePreflight && !await reserveAttempt(db,{key,sequenceId:null,date,history,dailyLimit:5})) throw new Error('Internal test capacity unavailable');
+      if (!resumePreflight && !await reserveAttempt(db,{key,sequenceId:null,date,dailyLimit:5})) throw new Error('Internal test capacity unavailable');
       let emailSubmitted=false;
       try {
         const validation=await api('POST','/email/verify',{body:{type:'email',verify:contact.email},version:'v3'});

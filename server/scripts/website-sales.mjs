@@ -84,11 +84,10 @@ export async function sendInterestAcknowledgements(db,api,date) {
     if(!latest||latest.id!==candidate.last_reply_id||classifyReply(latest.body)!=='positive'||history.some(m=>['failed','undelivered','bounced'].includes(m.status)))continue;
     // Another human or campaign response means this conversation already has an owner.
     if(history.some(m=>m.direction==='outbound'&&new Date(m.dateAdded)>=new Date(latest.dateAdded)))continue;
-    const accountHistory=await emailHistory(api,{startDate:new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString()});
     await db.query('BEGIN');let reserved=false;
     try {
       await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
-      if(await sharedCapacity(db,date,accountHistory))reserved=(await db.query("INSERT INTO website_acknowledgements(prospect_id,reply_id,status,run_date) VALUES($1,$2,'reserved',$3) ON CONFLICT DO NOTHING RETURNING prospect_id",[candidate.id,latest.id,date])).rowCount===1;
+      if(await sharedCapacity(db,date))reserved=(await db.query("INSERT INTO website_acknowledgements(prospect_id,reply_id,status,run_date) VALUES($1,$2,'reserved',$3) ON CONFLICT DO NOTHING RETURNING prospect_id",[candidate.id,latest.id,date])).rowCount===1;
       await db.query('COMMIT');
     }catch(error){await db.query('ROLLBACK');throw error;}
     if(!reserved)continue;
@@ -119,11 +118,10 @@ export async function notificationTest(db,api,date) {
     if(contact?.locationId!==process.env.GHL_LOCATION_ID||contact.email?.toLowerCase()!==recipient?.toLowerCase()||suppressionReason(contact))throw Error('Internal test recipient not cleared');
     const proof=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:process.env.WEBSITE_SENDER_TEST_CONTACT_ID,direction:'outbound'},process.env.GHL_LOCATION_ID);
     if(!websiteSenderVerified(proof))throw Error('Internal test sender proof invalid');
-    const accountHistory=await emailHistory(api,{startDate:new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString()});
     await db.query('BEGIN');let reserved=false;
     try {
       await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
-      if(await sharedCapacity(db,date,accountHistory))reserved=(await db.query('INSERT INTO website_controls(key,value) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING key',[key,JSON.stringify({date,status:'reserved',contactId})])).rowCount===1;
+      if(await sharedCapacity(db,date))reserved=(await db.query('INSERT INTO website_controls(key,value) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING key',[key,JSON.stringify({date,status:'reserved',contactId})])).rowCount===1;
       await db.query('COMMIT');
     }catch(error){await db.query('ROLLBACK');throw error;}
     if(!reserved)return {status:'held'};
@@ -177,12 +175,11 @@ export async function runWebsiteReplies() {
     const test=await emailDetail(api,{id:process.env.WEBSITE_SENDER_TEST_ID,contactId:process.env.WEBSITE_SENDER_TEST_CONTACT_ID,direction:'outbound'},process.env.GHL_LOCATION_ID);
     if(!websiteSenderVerified(test))throw Error('Notification sender not verified');
     for(const alert of alerts) {
-      const history=await emailHistory(api,{startDate:new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString()});
       await db.query('BEGIN');
       let reserved=false;
       try {
         await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);
-        if(await sharedCapacity(db,date,history))reserved=(await db.query("UPDATE website_alerts SET status='reserved',run_date=$2,updated_at=now() WHERE id=$1 AND status='pending' RETURNING id",[alert.id,date])).rowCount===1;
+        if(await sharedCapacity(db,date))reserved=(await db.query("UPDATE website_alerts SET status='reserved',run_date=$2,updated_at=now() WHERE id=$1 AND status='pending' RETURNING id",[alert.id,date])).rowCount===1;
         await db.query('COMMIT');
       }catch(error){await db.query('ROLLBACK');throw error;}
       if(!reserved){summary.alertsHeld++;continue;}

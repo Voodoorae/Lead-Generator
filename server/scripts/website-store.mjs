@@ -9,7 +9,7 @@ export async function ensureWebsite(db) {
     CREATE TABLE IF NOT EXISTS website_attempts(id text PRIMARY KEY,prospect_id text UNIQUE NOT NULL REFERENCES website_prospects(id),run_date date NOT NULL,status text NOT NULL,message_id text,email_message_id text,message jsonb NOT NULL,updated_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS website_controls(key text PRIMARY KEY,value jsonb NOT NULL,updated_at timestamptz NOT NULL DEFAULT now())`);
 }
-export async function reserveWebsite(db,{id,prospectId,date,history,message}) {
+export async function reserveWebsite(db,{id,prospectId,date,history=[],message}) {
   await db.query('BEGIN');
   try {
     await db.query('SELECT pg_advisory_xact_lock($1)',[7101050]);

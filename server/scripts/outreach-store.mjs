@@ -15,7 +15,7 @@ export async function ensureOutreach(db) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`);
 }
-export async function reserveAttempt(db, {key,sequenceId,date,history,dailyLimit=100}) {
+export async function reserveAttempt(db, {key,sequenceId,date,history=[],dailyLimit=100}) {
   // Every integrated writer takes this lock and counts both ledgers.
   // Other CRM emails consume allowance through the refreshed account history.
   await db.query('BEGIN');

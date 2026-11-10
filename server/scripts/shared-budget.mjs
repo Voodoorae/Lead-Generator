@@ -1,9 +1,11 @@
 import { outboundCount } from './outreach-policy.mjs';
 
 // Call inside the shared 7101050 transaction lock, immediately before reserving.
-// All attempts consume capacity, including uncertain submissions and internal mail.
-export async function sharedCapacity(db,date,history) {
-  if(!Array.isArray(history))throw Error('Complete account email history required');
+// All automated attempts consume capacity, including uncertain submissions and
+// internal mail. External CRM history is optional because its export endpoint can
+// stall on a repeated cursor; callers must never send with partial history.
+export async function sharedCapacity(db,date,history=[]) {
+  if(!Array.isArray(history))throw Error('External account email history invalid');
   const limit=(await db.query('SELECT target FROM shared_outreach_ramp_days WHERE run_date=$1',[date])).rows[0];
   if(!limit)return 0;
   const rows=(await db.query(`SELECT message_id,email_message_id FROM prospecting_send_attempts WHERE run_date=$1::date

@@ -55,7 +55,6 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
       await db.query(`INSERT INTO website_controls(key,value) VALUES('workflow-inventory',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,[JSON.stringify({signature,reviewed:workflowClear,published:result.workflows.filter(w=>w.status==='published').length})]);
     }catch{summary.errors.push('workflow-inventory-or-reviewed-trigger-signature-unavailable');}
     if(!workflowClear)summary.errors.push('contact-created-workflow-clearance-required');
-    const history=await emailHistory(api,{startDate:new Date(Date.parse(window.date+'T00:00:00Z')-86400000).toISOString()});
     // Check a previously delivered internal test by actual sender. No repeated probe mail.
     let senderClear=false;
     const senderContact=process.env.WEBSITE_SENDER_TEST_CONTACT_ID||process.env.GHL_PROBE_CONTACT_ID;
@@ -144,9 +143,8 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
         if(duplicate(candidate,freshContacts)||duplicate({...candidate,company:candidate.corporate.legalName},freshContacts)){summary.skipped++;continue;}
         const validation=await api('POST','/email/verify',{body:{type:'email',verify:candidate.email},version:'v3'});
         if(!verifiedEmail(validation,candidate.email)){await db.query("UPDATE website_prospects SET hold_reason='mailbox-deliverability-unverified' WHERE id=$1",[candidate.id]);summary.held++;continue;}
-        const refreshed=await emailHistory(api,{startDate:new Date(Date.parse(window.date+'T00:00:00Z')-86400000).toISOString()});
         const key='website-intro-'+createHash('sha256').update(candidate.email).digest('hex').slice(0,24);
-        if(!await reserveWebsite(db,{id:key,prospectId:candidate.id,date:window.date,history:refreshed,message:copy})){await db.query("UPDATE website_prospects SET hold_reason='capacity-or-permanent-reservation' WHERE id=$1",[candidate.id]);summary.held++;continue;}
+        if(!await reserveWebsite(db,{id:key,prospectId:candidate.id,date:window.date,message:copy})){await db.query("UPDATE website_prospects SET hold_reason='capacity-or-permanent-reservation' WHERE id=$1",[candidate.id]);summary.held++;continue;}
         // A reserved attempt is permanent even if contact creation becomes ambiguous.
         const created=await api('POST','/contacts/',{body:{email:candidate.email,name:candidate.company,companyName:candidate.company,website:candidate.website,source:'Proxaim website generator'}});
         const contact=created.contact;

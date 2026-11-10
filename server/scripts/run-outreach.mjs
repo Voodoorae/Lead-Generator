@@ -2,7 +2,7 @@ import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { apiClient, allContacts, emailHistory, emailDetail } from './outreach-api.mjs';
 import { qualifyWebsite } from './website-evidence.mjs';
-import { duplicate, companyKey, domainKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, outboundCount, campaignLimit } from './outreach-policy.mjs';
+import { duplicate, companyKey, domainKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, campaignLimit } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
 import { dailyRampLimit } from './outreach-ramp.mjs';
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
@@ -34,10 +34,14 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
     if (enabled && readiness.rows[0]?.status!=='delivered-and-reply-verified') throw new Error('Internal delivery and reply test must pass before prospect sending');
     if(enabled) {
       const since=new Date(Date.parse(date+'T00:00:00Z')-14*86400000).toISOString();
-      const history=await emailHistory(api,{startDate:since});
-      const sequenceContacts=new Set((await db.query('SELECT contact_id FROM prospecting_sequences WHERE contact_id IS NOT NULL')).rows.map(r=>r.contact_id));
+      const attempts=(await db.query(`SELECT a.status,a.message_id,a.email_message_id,s.contact_id FROM prospecting_send_attempts a
+        JOIN prospecting_sequences s ON s.id=a.sequence_id
+        WHERE a.run_date >= $1::date AND a.sequence_id IS NOT NULL`,[since.slice(0,10)])).rows;
       const campaignMessages=[];
-      for(const message of history.filter(m=>m.direction==='outbound' && sequenceContacts.has(m.contactId))) campaignMessages.push(await detailed(message));
+      for(const attempt of attempts) {
+        if(attempt.status!=='accepted'||!attempt.email_message_id||!attempt.contact_id) continue;
+        campaignMessages.push(await emailDetail(api,{id:attempt.email_message_id,contactId:attempt.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID));
+      }
       const delivered=campaignMessages.filter(m=>['delivered','opened','read','clicked'].includes(m.status)).length;
       const failed=campaignMessages.filter(m=>['failed','undelivered','bounced'].includes(m.status)).length;
       // Check failure safeguards before allocating a new day's ramp target.
@@ -122,13 +126,10 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
     if(enabled)await db.query("UPDATE shared_outreach_ramp_days SET status='complete',updated_at=now() WHERE run_date=$1",[date]);
     console.log(JSON.stringify({date,status:enabled?'outreach-run-complete':'outreach-held',reason:enabled?undefined:'sending-disabled-pending-readiness',qualified,held,accepted,sent:accepted}));
     async function dispatch(sequence,candidate,stage) {
-      // Refresh account-wide observations before EACH reservation, not once per batch.
-      // Fetch from the previous UTC midnight, then filter by London calendar
-      // date. This remains correct in both GMT and BST.
-      const startDate=new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString();
-      const history=await emailHistory(api,{startDate});
+      // Capacity comes from the shared durable reservation ledger. The CRM export
+      // endpoint is intentionally not queried here because it can repeat cursors.
       const key=sequence.id+':'+stage;
-      if (!await reserveAttempt(db,{key,sequenceId:sequence.id,date,history,dailyLimit:limit})) return false;
+      if (!await reserveAttempt(db,{key,sequenceId:sequence.id,date,dailyLimit:limit})) return false;
       let contactId=sequence.contact_id;
       if (!contactId) {
         // Durable state BEFORE creation makes a timeout/crash a reconciliation

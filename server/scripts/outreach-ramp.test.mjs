@@ -41,10 +41,11 @@ test('Friday to Monday grows once; unavailable proof and zero sends hold',async(
   assert.equal(await dailyRampLimit(fakeDb(prior,[accepted]),'2026-10-26',{readDelivery:async()=>{throw Error('Unavailable');}}),121);
   assert.equal(await dailyRampLimit(fakeDb(prior,[]),'2026-10-26',opts),121);
 });
-test('shared capacity includes pending attempts and unknown external mail without counting known mail twice',async()=>{
+test('shared capacity uses the durable ledger and can include known external mail without double counting',async()=>{
   const rows=[{message_id:'known'},{}];const queries=[];
   const db={async query(sql){queries.push(sql);return{rows:sql.startsWith('SELECT target')?[{target:100}]:rows};}};
   const history=[{id:'known',direction:'outbound',dateAdded:'2026-10-20T09:00:00Z'},{id:'outside',direction:'outbound',dateAdded:'2026-10-20T09:00:00Z'}];
+  assert.equal(await sharedCapacity(db,'2026-10-20'),98);
   assert.equal(await sharedCapacity(db,'2026-10-20',history),97);
   assert(queries[1].includes('website_acknowledgements'));assert(queries[1].includes('prospecting_send_attempts'));
   rows.push(...Array.from({length:97},()=>({})));assert.equal(await sharedCapacity(db,'2026-10-20',history),0);
