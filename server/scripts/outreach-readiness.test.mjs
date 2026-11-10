@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {duplicate,suppressionReason,verifiedEmail,outboundCount,addWeekdays,sendHold,compose,campaignLimit,isReadinessReply} from './outreach-policy.mjs';
+import {duplicate,suppressionReason,verifiedEmail,plausibleBusinessEmail,outboundCount,addWeekdays,sendHold,compose,campaignLimit,isReadinessReply} from './outreach-policy.mjs';
 import {apiClient,allContacts,emailHistory,emailDetail} from './outreach-api.mjs';
 import {homepageObservation,registeredNumber,publicAddress,qualifyWebsite,publishedBusinessEmails} from './website-evidence.mjs';
 import {submitOnce} from './outreach-store.mjs';
@@ -24,6 +24,11 @@ test('only the exact deliverable low-risk email is accepted',()=>{
   const good={result:'deliverable',risk:'low',address:'info@example.com'};
   assert.equal(verifiedEmail(good,'INFO@example.com'),true);
   for(const change of [{result:'catch_all'},{risk:'medium'},{address:'someone@example.com'},{leadConnectorRecommendation:{isEmailValid:false}}]) assert.equal(verifiedEmail({...good,...change},good.address),false);
+});
+test('initial outreach accepts a plausible published business email without paid verification',()=>{
+  assert.equal(plausibleBusinessEmail('hello@example.co.uk'),true);
+  assert.equal(plausibleBusinessEmail('hello@example'),false);
+  assert.equal(plausibleBusinessEmail('hello @example.com'),false);
 });
 test('live batches grow only with measured delivery and stop on early failures',()=>{
   assert.equal(campaignLimit({configured:50}),5);
@@ -99,17 +104,13 @@ test('description finding is bounded to complete HTML and excludes comments and 
   assert.equal(registeredNumber('<p>Charity number SC123456</p>'),null);
   assert.equal(registeredNumber('<p>Company number SC123456</p>'),'SC123456');
 });
-test('corporate, published email and active registry must all match',async()=>{
+test('a publicly reachable business website and published business email can qualify without registry matching',async()=>{
   const html='<html><body>Example Limited. Company number SC123456. Contact info@example.com.</body></html>';
-  const registry='<title>EXAMPLE LIMITED overview - Find and update company information</title><body>Company number SC123456 Company status Active</body>';
-  const read=async url=>({url,html:url.includes('service.gov.uk')?registry:html});
+  const read=async url=>({url,html});
   const result=await qualifyWebsite({website:'https://example.com',email:'info@example.com',address:'Stirling FK8 2AA'},'Example Ltd',{read});
-  assert.equal(result.candidate.corporate.verified,true);
   assert.equal(result.candidate.route,'visibility');
   assert.equal((await qualifyWebsite({website:'https://example.com',email:'person@example.com',address:'Stirling'},'Example',{read})).candidate.email,'info@example.com');
-  const wrong=async url=>({url,html:url.includes('service.gov.uk')?registry.replace('EXAMPLE LIMITED','UNRELATED LIMITED'):html});
-  assert.equal((await qualifyWebsite({website:'https://example.com',email:'info@example.com',address:'Stirling FK8 2AA'},'Example',{read:wrong})).hold,'registered-company-website-match-unverified');
-  assert.equal((await qualifyWebsite({website:'https://example.com',email:'info@example.com',address:'London'},'Example',{read})).hold,'scottish-business-address-unverified');
+  assert.equal((await qualifyWebsite({website:'https://example.com',email:'info@example.com',address:'London'},'Example',{read})).candidate.email,'info@example.com');
 });
 test('missing OG image and CSP use actual HTML and observed headers only',()=>{
   const html='<meta name="description" content="Useful description"><meta property="og:image" content="https://example.com/image.png"></body>';
@@ -134,8 +135,8 @@ test('quoted test instructions cannot masquerade as a human readiness reply',()=
   assert.equal(isReadinessReply('Out of office\nOn Sunday someone wrote: Ready cloud-internal-test-v1'),false);
 });
 test('missing or stale qualification cannot pass a send gate',()=>{
-  assert.equal(sendHold({}),'corporate-status-unverified');
-  const c={corporate:{verified:true,sourceUrl:'https://registry.example'},emailPublished:true,emailSourceUrl:'https://example.com',email:'info@example.com',
+  assert.equal(sendHold({}),'email-provenance-unverified');
+  const c={emailPublished:true,emailSourceUrl:'https://example.com',email:'info@example.com',
     evidence:{sourceUrl:'https://example.com',observation:'Checked detail',checkedAt:'2026-10-01T00:00:00Z'},validation:{result:'deliverable',risk:'low',address:'info@example.com'}};
   assert.equal(sendHold(c,new Date('2026-10-11T00:00:00Z')),'stale-evidence');
 });
@@ -143,7 +144,7 @@ test('published shared and named business addresses pass, without guessed or non
   const html='<p>mail@example.com studio@example.com enquiry@example.com design@example.com Chris&#64;example.com privacy@example.com noreply@example.com other@elsewhere.test</p><script>fake@example.com</script><!-- hidden@example.com -->';
   assert.deepEqual(publishedBusinessEmails(html,'example.com'),['mail@example.com','studio@example.com','enquiry@example.com','design@example.com','chris@example.com']);
 });
-test('an independently matched active company does not need to print its number on its site',async()=>{
+test('a public business site with a published mailbox does not need a registry lookup',async()=>{
   const home='<html><body>Example Architects. Stirling FK8 2AA. Chris@example.com.</body></html>';
   const search='<a href="/company/SC123456">EXAMPLE ARCHITECTS LIMITED</a><a href="/company/SC999999">OTHER LIMITED</a>';
   const registry='<title>EXAMPLE ARCHITECTS LIMITED overview</title><body>Company number SC123456 Registered office address Stirling FK8 2AA Company status Active</body>';
@@ -151,9 +152,9 @@ test('an independently matched active company does not need to print its number 
   const score={website:'https://example.com',address:'Stirling FK8 2AA'};
   const q=await qualifyWebsite(score,'Example Architects Ltd',{read});
   assert.equal(q.candidate.email,'chris@example.com');
-  assert.equal(q.candidate.corporate.verificationMethod,'registry-name-and-address');
+  assert.equal(q.candidate.emailSourceUrl,'https://example.com/');
   const wrong=async url=>({url,html:url.includes('/search/companies')?search:url.includes('/company/')?registry.replace('Stirling FK8 2AA','Glasgow G1 1AA'):home});
-  assert.equal((await qualifyWebsite(score,'Example Architects Ltd',{read:wrong})).hold,'registered-company-website-match-unverified');
+  assert.equal((await qualifyWebsite(score,'Example Architects Ltd',{read:wrong})).candidate.email,'chris@example.com');
 });
 test('an access challenge cannot become a missing-description or security claim',()=>{
   assert.equal(homepageObservation('<title>Just a moment...</title><body>Checking your browser</body>',{csp:null}),null);

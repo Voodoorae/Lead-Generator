@@ -2,7 +2,7 @@ import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { apiClient, allContacts, emailHistory, emailDetail } from './outreach-api.mjs';
 import { qualifyWebsite } from './website-evidence.mjs';
-import { duplicate, companyKey, domainKey, suppressionReason, verifiedEmail, sendHold, compose, addWeekdays, campaignLimit } from './outreach-policy.mjs';
+import { duplicate, companyKey, domainKey, suppressionReason, sendHold, compose, addWeekdays, campaignLimit } from './outreach-policy.mjs';
 import { ensureOutreach, reserveAttempt, submitOnce } from './outreach-store.mjs';
 import { dailyRampLimit } from './outreach-ramp.mjs';
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
@@ -63,7 +63,6 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
         if(duplicate(q,contacts)) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason='existing-crm-contact' WHERE id=$1",[sequence.id]); continue; }
         const fresh=await qualifyWebsite({website:q.website,email:q.email,address:q.address},q.company).catch(()=>({hold:'website-evidence-unavailable'}));
         if(!fresh.candidate) { held++; continue; }
-        fresh.candidate.validation=await api('POST','/email/verify',{body:{type:'email',verify:q.email},version:'v3'});
         if(sendHold(fresh.candidate)) { held++; continue; }
         if(await dispatch(sequence,fresh.candidate,0)) accepted++;
         contacts.push({email:q.email,website:q.website,companyName:q.company});
@@ -82,7 +81,6 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       if (!refreshed.candidate || refreshed.candidate.route!==q.route) {
         await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason=$2 WHERE id=$1",[sequence.id,refreshed.hold || 'route-changed']); continue;
       }
-      refreshed.candidate.validation=await api('POST','/email/verify',{body:{type:'email',verify:q.email},version:'v3'});
       if (sendHold(refreshed.candidate)) { await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason='revalidation-failed' WHERE id=$1",[sequence.id]); continue; }
       if (await dispatch(sequence,refreshed.candidate,sequence.stage)) accepted++;
     }
@@ -95,8 +93,8 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
     const candidates=await db.query(`SELECT c.* FROM (SELECT DISTINCT ON (place_id) * FROM prospecting_candidates
       WHERE run_date >= $1::date - interval '14 days' ORDER BY place_id,run_date DESC) c
       LEFT JOIN prospecting_qualifications q USING(place_id)
-      WHERE q.place_id IS NULL OR COALESCE(q.result->>'policyVersion','')<>'2026-10-19b' OR q.updated_at < now()-interval '3 days' OR ($2 AND q.status='evidence-qualified') OR $3
-      ORDER BY CASE WHEN q.status='evidence-qualified' THEN 0 WHEN q.place_id IS NULL THEN 1 ELSE 2 END,c.run_date DESC LIMIT 30`,[date,enabled,process.env.OUTREACH_PREPARE_DATE===date || Boolean(reviewDomain)]);
+      WHERE q.place_id IS NULL OR COALESCE(q.result->>'policyVersion','')<>'2026-11-10c' OR q.updated_at < now()-interval '3 days' OR $2
+      ORDER BY CASE WHEN q.status='evidence-qualified' THEN 0 WHEN q.place_id IS NULL THEN 1 ELSE 2 END,c.run_date DESC LIMIT 30`,[date,process.env.OUTREACH_PREPARE_DATE===date || Boolean(reviewDomain)]);
     for (const record of candidates.rows) {
       const score=record.score, identity={company:record.company,website:score.website,email:score.email};
       if(reviewDomain && domainKey(score.website)!==reviewDomain) continue;
@@ -104,13 +102,9 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
       if (duplicate(identity,contacts)) result={hold:'existing-crm-email-domain-or-company'};
       else result=reviewedCandidate ? {candidate:structuredClone(reviewedCandidate)} : await qualifyWebsite(score,record.company).catch(()=>({hold:'website-evidence-unavailable'}));
       const candidate=result.candidate;
-      if (candidate && enabled && accepted+usedToday<limit) {
-        candidate.validation=await api('POST','/email/verify',{body:{type:'email',verify:candidate.email},version:'v3'});
-        if (!verifiedEmail(candidate.validation,candidate.email)) { result.hold='email-not-verified'; delete result.candidate; }
-      }
       await db.query(`INSERT INTO prospecting_qualifications(place_id,status,reason,result) VALUES($1,$2,$3,$4)
         ON CONFLICT(place_id) DO UPDATE SET status=EXCLUDED.status,reason=EXCLUDED.reason,result=EXCLUDED.result,updated_at=now()`,
-        [record.place_id,result.candidate?'evidence-qualified':'held',result.hold || (enabled?null:'sending-disabled'),JSON.stringify({...result.candidate,policyVersion:'2026-10-19b'})]);
+        [record.place_id,result.candidate?'evidence-qualified':'held',result.hold || (enabled?null:'sending-disabled'),JSON.stringify({...result.candidate,policyVersion:'2026-11-10c'})]);
       if (!result.candidate) { held++; continue; }
       qualified++;
       if (!enabled || accepted+usedToday>=limit) continue;

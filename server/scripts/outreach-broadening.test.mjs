@@ -25,9 +25,9 @@ test('challenge pages cannot qualify through service words',async()=>{
   const q=await qualifyWebsite({website:'https://example.invalid',address:'Stirling FK8 2AA'},'Example Consultancy Ltd',{read:async url=>({url,html:'<title>Just a moment</title><body>Consultancy SC123456 Chris@example.invalid</body>'})});
   assert.equal(q.hold,'website-content-unverified');
 });
-test('published legal name links company identity despite a different registered office',async()=>{
+test('a published business email is sufficient for initial outreach even without a registry lookup',async()=>{
   const home=html.replace('Company number SC123456.','');
-  const lookup=async url=>({url,html:url.includes('/search/companies')?'<a href="/company/SC123456">EXAMPLE CONSULTANCY LIMITED</a>':url.includes('/company/')?registry.replace('Company status','Registered office address Glasgow G1 1AA Company status'):home,headers:{csp:'self'}});
+  const lookup=async url=>({url,html:home,headers:{csp:'self'}});
   const q=await qualifyWebsite({website:'https://example.invalid',address:'Stirling FK8 2AA'},'Example Consultancy Ltd',{read:lookup});
-  assert(q.candidate.corporate.verified);
+  assert.equal(q.candidate.email,'chris@example.invalid');
 });

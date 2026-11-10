@@ -27,6 +27,15 @@ export function verifiedEmail(result, expected) {
   return result?.result === 'deliverable' && result.risk === 'low'
     && emailKey(result.address) === emailKey(expected) && result.leadConnectorRecommendation?.isEmailValid !== false;
 }
+export function plausibleBusinessEmail(value) {
+  const email=emailKey(value);
+  if(email.length>254 || /[\s<>()[\],;:\\"]/u.test(email)) return false;
+  const at=email.lastIndexOf('@');
+  if(at<1 || at!==email.indexOf('@')) return false;
+  const local=email.slice(0,at), host=email.slice(at+1);
+  return local.length<=64 && /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local)
+    && /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(host);
+}
 export function campaignLimit({configured=50,delivered=0,failed=0,rampTarget=null}) {
   for(const n of [configured,delivered,failed]) if (!Number.isInteger(n) || n<0) throw new Error('Campaign delivery counts invalid');
   if (configured<1 || configured>1000) throw new Error('Campaign ceiling invalid');
@@ -59,12 +68,11 @@ export function addWeekdays(date, days) {
   return d.toISOString().slice(0,10);
 }
 export function sendHold(candidate, now = new Date()) {
-  if (!candidate.corporate?.verified || !candidate.corporate.sourceUrl) return 'corporate-status-unverified';
   if (!candidate.emailPublished || !candidate.emailSourceUrl) return 'email-provenance-unverified';
+  if (!plausibleBusinessEmail(candidate.email)) return 'email-format-invalid';
   if (!candidate.evidence?.observation || !candidate.evidence.sourceUrl) return 'missing-evidence';
   const checked = new Date(candidate.evidence.checkedAt).getTime();
   if (!Number.isFinite(checked) || checked > now.getTime() || now.getTime()-checked > 7*86400000) return 'stale-evidence';
-  if (!verifiedEmail(candidate.validation,candidate.email)) return 'email-not-verified';
   return null;
 }
 export function isReadinessReply(body) {
