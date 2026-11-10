@@ -3,6 +3,21 @@ import { londonWindow } from './prospecting-policy.mjs';
 import { websiteWindow } from './website-policy.mjs';
 import { runWebsiteReplies } from './website-sales.mjs';
 import { runOutreach } from './run-outreach.mjs';
+
+async function runOutreachSafely(date) {
+  try {
+    return await runOutreach(date);
+  } catch (error) {
+    // A repeated export cursor means CRM history is incomplete. Holding is safer
+    // than sending without a complete view of replies, bounces and capacity.
+    if (error?.message === 'CRM history cursor repeated') {
+      console.log(JSON.stringify({date,status:'outreach-held',reason:'crm-history-pagination-stalled'}));
+      return {status:'outreach-held',reason:'crm-history-pagination-stalled'};
+    }
+    throw error;
+  }
+}
+
 const startedAt=new Date();
 const replies=await runWebsiteReplies();
 if(replies.newReplies||replies.alertsAccepted||replies.alertsHeld||replies.acknowledgementsAccepted||replies.notificationTest)console.log(JSON.stringify({campaign:'website-replies',...replies}));
@@ -12,7 +27,7 @@ if(websiteWindow(startedAt).due||process.env.WEBSITE_TEST_DATE===websiteWindow()
 const professional=londonWindow(startedAt);
 const recovery=process.env.PROSPECTING_MANUAL_RUN==='true'&&process.env.PROSPECTING_TEST_DATE===professional.date;
 if(recovery&&process.env.PROSPECTING_COLLECT_DATE===professional.date) await import('./collect-prospects.mjs');
-else if(recovery) await runOutreach(professional.date);
+else if(recovery) await runOutreachSafely(professional.date);
 else if(professional.due) await import('./collect-prospects.mjs');
-else if(professional.outreachDue) await runOutreach(professional.date);
+else if(professional.outreachDue) await runOutreachSafely(professional.date);
 
