@@ -86,7 +86,8 @@ test('email details override stale summary status and reject the wrong account',
 test('read-only throttling retries, sends and paid verification do not',async()=>{
   let calls=0;let waited=0;
   const fetchImpl=async()=>++calls===1?{ok:false,status:429,headers:{get:()=> '1'}}:{ok:true,json:async()=>({})};
-  const api=apiClient({token:'private',locationId:'test',fetchImpl,sleep:async ms=>{waited=ms;}});
+  const api=apiClient({token:'private',locationId:'test',fetchImpl,sleep:async ms=>{waited=ms;},sendEnabled:()=>true});
+  api.setEmailGuard(async()=>{});
   await api('GET','/contacts/test');assert.equal(calls,2);assert.equal(waited,1000);
   calls=0;await assert.rejects(api('POST','/conversations/messages',{body:{}}),/HTTP 429/);assert.equal(calls,1);
   calls=0;await assert.rejects(api('POST','/email/verify',{body:{}}),/HTTP 429/);assert.equal(calls,1);

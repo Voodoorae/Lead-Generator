@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { installBusinessGuard } from './business-suppression.mjs';
 import { apiClient, emailHistory, emailDetail } from './outreach-api.mjs';
 import { londonWindow } from './prospecting-policy.mjs';
 import { verifiedEmail, emailKey, outboundCount, suppressionReason, isReadinessReply } from './outreach-policy.mjs';
@@ -9,6 +10,7 @@ export async function internalReadiness({send=false,senderOnly=false}={}) {
   if (send && (senderOnly?process.env.OUTREACH_SENDER_TEST_DATE:process.env.OUTREACH_INTERNAL_TEST_DATE)!==date) throw new Error('Internal test requires current UK date');
   const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL}),db=await pool.connect();
+  installBusinessGuard(api,db);
   try {
     await ensureOutreach(db);
     let attempt=(await db.query('SELECT * FROM prospecting_send_attempts WHERE attempt_key=$1',[key])).rows[0];

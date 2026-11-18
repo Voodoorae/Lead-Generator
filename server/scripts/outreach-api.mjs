@@ -1,14 +1,21 @@
 const BASE = 'https://services.leadconnectorhq.com';
 const idPattern = /^[A-Za-z0-9_-]+$/;
-export function apiClient({ token, locationId, fetchImpl = fetch, sleep = ms=>new Promise(r=>setTimeout(r,ms)) }) {
+export function apiClient({ token, locationId, fetchImpl = fetch, sleep = ms=>new Promise(r=>setTimeout(r,ms)), sendEnabled=()=>process.env.OUTREACH_SEND_APPROVED==='true' }) {
   if (!token || /[\r\n]/.test(token) || !idPattern.test(locationId || '')) throw new Error('CRM configuration invalid');
-  return async (method, path, { query = {}, body, version = '2021-07-28' } = {}) => {
+  let emailGuard;
+  const client = async (method, path, { query = {}, body, version = '2021-07-28' } = {}) => {
     const contactRead = /^\/contacts\/[A-Za-z0-9_-]+$/.test(path);
     const tagsWrite = /^\/contacts\/[A-Za-z0-9_-]+\/tags$/.test(path);
     const messageRead = /^\/conversations\/messages\/(?:email\/)?[A-Za-z0-9_-]+$/.test(path);
     const allowed = method === 'GET' ? contactRead || messageRead || ['/conversations/messages/export','/conversations/search','/workflows/'].includes(path)
-      : method === 'POST' && (tagsWrite || ['/contacts/search','/contacts/','/email/verify','/conversations/messages'].includes(path));
+      : method === 'POST' && (tagsWrite || ['/contacts/search','/contacts/','/email/verify','/conversations/messages'].includes(path))
+      || method === 'PUT' && contactRead && Object.keys(body || {}).length===1 && body?.dndSettings?.email?.status==='active' && body.dndSettings.email.code==='OPTED_OUT';
     if (!allowed) throw new Error('CRM operation not allowed');
+    if(method==='POST'&&path==='/conversations/messages') {
+      if(!sendEnabled())throw Error('Global outreach pause: explicit send approval required');
+      if(typeof emailGuard!=='function')throw Error('Business suppression guard missing');
+      await emailGuard(body);
+    }
     const url = new URL(path, BASE);
     for (const [k,v] of Object.entries({ ...query, locationId })) if (v !== undefined) url.searchParams.set(k, String(v));
     // Contacts create/search require locationId in the body. Other operations
@@ -34,6 +41,8 @@ export function apiClient({ token, locationId, fetchImpl = fetch, sleep = ms=>ne
     for(const records of [data.contacts,data.messages]) if(Array.isArray(records) && records.some(r=>r.locationId!==locationId)) throw new Error('CRM collection account mismatch');
     return data;
   };
+  client.setEmailGuard=guard=>{if(typeof guard!=='function')throw Error('Suppression guard must be a function');emailGuard=guard;};
+  return client;
 }
 export async function emailDetail(api,message,locationId) {
   const data=await api('GET','/conversations/messages/email/'+message.id);
@@ -72,7 +81,7 @@ export async function emailHistory(api, query) {
   const messages = [], seen = new Set(), cursors = new Set();
   let cursor;
   for (let page = 0; page < 100; page++) {
-    const data = await api('GET','/conversations/messages/export',{query:{...query,channel:'Email',limit:100,...(cursor && {cursor})}});
+    const data = await api('GET','/conversations/messages/export',{query:{...query,channel:'Email',limit:query?.limit || 100,...(cursor && {cursor})}});
     if (!Array.isArray(data.messages)) throw new Error('CRM email history invalid');
     for (const m of data.messages) {
       if (!m.id || seen.has(m.id)) throw new Error('CRM history repeated or missing ID');

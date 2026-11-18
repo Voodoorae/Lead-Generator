@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { installBusinessGuard } from './business-suppression.mjs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { apiClient,allContacts,emailHistory,emailDetail,proxaimEmailDetail } from './outreach-api.mjs';
@@ -42,6 +43,7 @@ export async function runWebsiteGenerator({force=false,readinessOnly=false}={}) 
     runStarted=true;
     if(!process.env.GHL_API_TOKEN||!process.env.GHL_LOCATION_ID)throw Error('CRM API credentials required');
     const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
+    installBusinessGuard(api,db);
     if(enabled&&!readinessOnly) await dailyRampLimit(db,window.date,{configured:Number(process.env.OUTREACH_DAILY_LIMIT||1000),floor:Number(process.env.OUTREACH_RAMP_FLOOR||100),readDelivery:a=>emailDetail(api,{id:a.email_message_id,contactId:a.contact_id,direction:'outbound'},process.env.GHL_LOCATION_ID)});
     const contacts=await allContacts(api);
     if(contacts.some(c=>c.locationId!==process.env.GHL_LOCATION_ID))throw Error('CRM account mismatch');

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { installBusinessGuard } from './business-suppression.mjs';
 import { addWeekdays, outboundCount, suppressionReason } from './outreach-policy.mjs';
 import { apiClient, emailHistory, emailDetail, proxaimEmailDetail } from './outreach-api.mjs';
 import { escapeHtml, WEBSITE_FROM, websiteWindow, websiteSenderVerified } from './website-policy.mjs';
@@ -150,6 +151,7 @@ export async function runWebsiteReplies() {
     if(!owns)return {status:'outreach-running'};
     await ensureWebsite(db);await ensureSales(db);
     const api=apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID}),date=websiteWindow().date;
+    installBusinessGuard(api,db);
     summary.notificationTest=await notificationTest(db,api,date);
     const rows=(await db.query("SELECT * FROM website_prospects WHERE contact_id IS NOT NULL AND last_sent IS NOT NULL AND status<>'retired'")).rows;
     for(const row of rows) {

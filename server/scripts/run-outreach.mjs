@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { installBusinessGuard } from './business-suppression.mjs';
 import { randomUUID } from 'node:crypto';
 import { apiClient, allContacts, emailHistory, emailDetail } from './outreach-api.mjs';
 import { qualifyWebsite } from './website-evidence.mjs';
@@ -17,6 +18,7 @@ export async function runOutreach(date, {reviewDomain=null,reviewedCandidate=nul
   if (enabled && !process.env.GHL_EMAIL_FROM) throw new Error('Outreach sender missing');
   const api = apiClient({token:process.env.GHL_API_TOKEN,locationId:process.env.GHL_LOCATION_ID});
   const pool = new pg.Pool({connectionString:process.env.DATABASE_URL}), db=await pool.connect();
+  installBusinessGuard(api,db);
   let ownsLock=false, accepted=0, held=0, qualified=0, usedToday=0;
   const detailCache=new Map();
   async function detailed(message) {

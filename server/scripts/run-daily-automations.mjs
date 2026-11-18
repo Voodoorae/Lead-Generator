@@ -3,6 +3,7 @@ import { londonWindow } from './prospecting-policy.mjs';
 import { websiteWindow } from './website-policy.mjs';
 import { runWebsiteReplies } from './website-sales.mjs';
 import { runOutreach } from './run-outreach.mjs';
+import { runSuppressionMaintenance } from './suppression-maintenance.mjs';
 
 async function runOutreachSafely(date) {
   try {
@@ -19,6 +20,11 @@ async function runOutreachSafely(date) {
 }
 
 const startedAt=new Date();
+await runSuppressionMaintenance();
+if(process.env.OUTREACH_SEND_APPROVED!=='true') {
+  console.log(JSON.stringify({status:'all-outreach-paused',sent:0}));
+  process.exit(0);
+}
 const replies=await runWebsiteReplies();
 if(replies.newReplies||replies.alertsAccepted||replies.alertsHeld||replies.acknowledgementsAccepted||replies.notificationTest)console.log(JSON.stringify({campaign:'website-replies',...replies}));
 if(websiteWindow(startedAt).due||process.env.WEBSITE_TEST_DATE===websiteWindow().date) {
