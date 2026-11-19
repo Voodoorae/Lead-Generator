@@ -364,10 +364,11 @@ router.post("/leads", async (req, res) => {
 
 // ── Route: score a single lead ───────────────────────────────────────────────
 router.post("/score-lead", async (req, res) => {
-  const { placeId, name, location } = req.body as {
+  const { placeId, name, location, contactOnly } = req.body as {
     placeId?: string;
     name?: string;
     location?: string;
+    contactOnly?: boolean;
   };
 
   if (!placeId) {
@@ -412,6 +413,12 @@ router.post("/score-lead", async (req, res) => {
         emailHook: "",
         fetchNote: "No website listed on Google Maps",
       });
+      return;
+    }
+
+    // Discovery needs only the verified Places identity; outreach checks the site separately.
+    if(contactOnly===true) {
+      res.json({placeId,name,website,domain,status:'discovered',email:null});
       return;
     }
 
@@ -654,3 +661,4 @@ router.get("/leads/export", async (req, res) => {
 });
 
 export default router;
+
