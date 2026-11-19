@@ -85,13 +85,11 @@ export async function syncBusinessSuppression(db,api,{locationId=process.env.GHL
   if(contacts.some(c=>c.locationId!==locationId)||messages.some(m=>m.locationId!==locationId))throw Error('Suppression account mismatch');
   const prior=(await db.query('SELECT identity_key,reason,evidence FROM outreach_business_suppression')).rows;
   const snapshot=buildSuppressionSnapshot(contacts,messages,prior);
-  // Durable holds are written before CRM updates. Failed synchronization blocks sends.
+  // Durable holds are written before any sequence state changes. GHL email DND
+  // mirroring is handled separately: the direct API rejects its update with 422.
+  // The cloud send gate and stopped sequences do not depend on that mirror.
   for(const h of snapshot.holds.values())await db.query(`INSERT INTO outreach_business_suppression(identity_key,reason,evidence) VALUES($1,$2,$3)
     ON CONFLICT(identity_key) DO UPDATE SET reason=EXCLUDED.reason,evidence=EXCLUDED.evidence,updated_at=now()`,[h.identity_key,h.reason,h.evidence]);
-  for(const c of contacts){const hold=identityKeys(c).map(k=>snapshot.holds.get(k)).find(h=>h?.reason==='opted-out');
-    if(hold&&!emailDnd(c)){const updated=await api('PUT','/contacts/'+c.id,{body:{dndSettings:{email:{status:'active',code:'OPTED_OUT',message:'Business suppression: '+hold.evidence}}}});
-      if(updated.contact?.id!==c.id||!emailDnd(updated.contact))throw Error('CRM suppression update not verified');}
-  }
   const rows=(await db.query("SELECT id,domain,email,contact_id FROM prospecting_sequences WHERE status IN ('active','qualified')")).rows;
   for(const row of rows){const c=contacts.find(c=>c.id===row.contact_id)||{email:row.email,website:row.domain};const hold=identityKeys(c).map(k=>snapshot.holds.get(k)).find(Boolean);
     if(hold)await db.query("UPDATE prospecting_sequences SET status='stopped',stopped_reason=$2,updated_at=now() WHERE id=$1",[row.id,'business-'+hold.reason]);}

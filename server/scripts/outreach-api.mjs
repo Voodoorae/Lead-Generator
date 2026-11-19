@@ -8,8 +8,7 @@ export function apiClient({ token, locationId, fetchImpl = fetch, sleep = ms=>ne
     const tagsWrite = /^\/contacts\/[A-Za-z0-9_-]+\/tags$/.test(path);
     const messageRead = /^\/conversations\/messages\/(?:email\/)?[A-Za-z0-9_-]+$/.test(path);
     const allowed = method === 'GET' ? contactRead || messageRead || ['/conversations/messages/export','/conversations/search','/workflows/'].includes(path)
-      : method === 'POST' && (tagsWrite || ['/contacts/search','/contacts/','/email/verify','/conversations/messages'].includes(path))
-      || method === 'PUT' && contactRead && Object.keys(body || {}).length===1 && body?.dndSettings?.email?.status==='active' && body.dndSettings.email.code==='OPTED_OUT';
+      : method === 'POST' && (tagsWrite || ['/contacts/search','/contacts/','/email/verify','/conversations/messages'].includes(path));
     if (!allowed) throw new Error('CRM operation not allowed');
     if(method==='POST'&&path==='/conversations/messages') {
       if(!sendEnabled())throw Error('Global outreach pause: explicit send approval required');

@@ -95,11 +95,11 @@ function fixture({messages=[reply],contacts=[info,elias],incomplete=false}={}) {
   }});
   return {api,db,state};
 }
-test('actual central send path stops colleague opt-out, saves holds and updates both DNDs',async()=>{
+test('actual central send path stops colleague opt-out and saves holds',async()=>{
   const old=process.env.GHL_LOCATION_ID;process.env.GHL_LOCATION_ID='L';
   try{const f=fixture();installBusinessGuard(f.api,f.db);
     await assert.rejects(f.api('POST','/conversations/messages',{body:{contactId:'info'}}),/suppressed/);
-    assert.equal(f.state.sends,0);assert.deepEqual(f.state.updates.sort(),['elias','info']);assert.equal(f.state.stopped,1);
+    assert.equal(f.state.sends,0);assert.deepEqual(f.state.updates,[]);assert.equal(f.state.stopped,1);
   }finally{if(old===undefined)delete process.env.GHL_LOCATION_ID;else process.env.GHL_LOCATION_ID=old;}
 });
 test('incomplete account history cannot produce an email or partial suppression changes',async()=>{
